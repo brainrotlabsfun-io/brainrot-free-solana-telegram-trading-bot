@@ -15,7 +15,6 @@ from bot.keyboards.main_menu import build_main_menu, build_back_button, build_wa
 from services.placeholders import (
     wallet_page,
     settings_page,
-    premium_page,
     watchlist_page,
     watchlist_section_wip,
 )
@@ -30,7 +29,7 @@ HELP_TEXT = (
     "/start — Launch the bot\n"
     "/menu — Open the main menu\n"
     "/help — Show this help message\n\n"
-    "💼 Wallet · ⚙️ Settings · 👑 Premium · 👁 Watchlist\n\n"
+    "💼 Wallet · ⚙️ Settings · 👁 Watchlist\n\n"
     "<i>Use the Back button to return to the menu.</i>"
 )
 
@@ -126,19 +125,6 @@ async def cb_settings(callback: CallbackQuery) -> None:
     await callback.message.edit_text(
         text=settings_page(),
         reply_markup=build_back_button(),
-    )
-    await callback.answer()
-
-
-# ── Premium → Supreme Black info ───────────────────────────────────────────────
-@router.callback_query(F.data == "menu:premium")
-async def cb_premium(callback: CallbackQuery) -> None:
-    from bot.handlers.supreme_access import SUPREME_BLACK_INFO
-    from bot.keyboards.supreme_menu import build_supreme_black_info
-    await callback.message.edit_text(
-        SUPREME_BLACK_INFO,
-        reply_markup=build_supreme_black_info(),
-        disable_web_page_preview=True,
     )
     await callback.answer()
 
@@ -289,10 +275,6 @@ _FAQ: dict[str, tuple[str, str]] = {
             "❓ <b>General FAQ</b>\n"
             "━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n\n"
 
-            "<b>What is SUPREME / Supreme Black?</b>\n"
-            "Premium tiers unlocked by holding or burning $BRAINROT tokens. Higher tiers unlock "
-            "more wallets, higher trade limits, auto-sell, and advanced filters.\n\n"
-
             "<b>Why does the bot restart / get stuck?</b>\n"
             "On Windows, stopping the bot sometimes leaves a background Python process. "
             "Run <code>taskkill /F /IM python.exe</code> in your terminal, then restart.\n\n"
@@ -394,22 +376,12 @@ _NEW_USERS_TEXT = (
     "Each module has its own settings: trade size, score threshold, slippage, kill switch, "
     "max buys per hour, and more. Tap <b>⚙️ Settings</b> inside any module.\n\n"
 
-    "━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n"
-    "🔱 <b>UNLOCK MORE WITH SUPREME BLACK</b>\n\n"
-
-    "Free tier lets you run 1 copy wallet and basic auto-buy.\n"
-    "Supreme Black unlocks unlimited wallets, higher trade limits, auto-sell, "
-    "advanced filters, and priority execution — all by holding or burning <b>$BRAINROT</b>.\n\n"
-
-    "<i>Tap the button below to see tier details and activate.</i>"
+    "<i>Every feature is unlocked — set it up the way you want.</i>"
 )
 
 
 def _build_new_users_keyboard() -> InlineKeyboardMarkup:
     builder = InlineKeyboardBuilder()
-    builder.row(
-        InlineKeyboardButton(text="🔱 View All Tiers", callback_data="supreme:black_info")
-    )
     builder.row(
         InlineKeyboardButton(text="💼  Go to My Wallet", callback_data="menu:wallet")
     )

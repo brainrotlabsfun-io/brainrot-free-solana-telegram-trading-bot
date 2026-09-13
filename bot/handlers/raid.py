@@ -31,7 +31,6 @@ from services.raid_service import (
     get_raid_participant_count,
 )
 from services.raid_points_service import get_leaderboard, get_user_stats
-from services.brainrot_gate import is_premium_user
 from utils.config import settings
 
 router = Router()
@@ -169,10 +168,9 @@ async def cb_raid_complete(callback: CallbackQuery) -> None:
         await callback.answer("You already completed this raid!", show_alert=True)
         return
 
-    # Calculate points — double for $BRAINROT premium holders
+    # Calculate points
     base_points = raid["reward_points"]
-    premium = await is_premium_user(user_id)
-    points = base_points * 2 if premium else base_points
+    points = base_points
 
     success = await mark_raid_completed(raid_id, user_id, username, points)
 
@@ -180,14 +178,13 @@ async def cb_raid_complete(callback: CallbackQuery) -> None:
         await callback.answer("Already completed — no double dipping!", show_alert=True)
         return
 
-    bonus_text = "\n🔥 <b>$BRAINROT Premium bonus applied — 2x points!</b>" if premium else ""
 
     await callback.message.edit_text(
         text=(
             f"✅ <b>Raid Completed!</b>\n"
             f"━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n\n"
             f"You earned <b>{points} points</b>."
-            f"{bonus_text}\n\n"
+            f"\n\n"
             f"Keep raiding to climb the leaderboard!\n"
             f"Use My Raid Stats to check your rank."
         ),
@@ -276,7 +273,6 @@ async def cb_raid_rules(callback: CallbackQuery) -> None:
         "   Duplicate submissions are blocked automatically.\n\n"
         "6. Abuse or faking completions results in point removal.\n\n"
         "━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n"
-        "👑 <b>$BRAINROT holders earn 2x points</b> on every raid.\n"
         "<i>Real engagement only. Build the community right.</i>"
     )
 

@@ -4,10 +4,13 @@ An open-source, modular Telegram bot for the Solana ecosystem — token sniping,
 copy trading, automated exits, wallet tracking, community raids, and a
 referral system. Built with [aiogram 3](https://docs.aiogram.dev/) and SQLite.
 
-This repository ships **no credentials of any kind**. Every wallet, token,
-API key, and admin ID is read from your own `.env` file. Out of the box the
-bot runs against the free public Solana RPC with all paid and token-gated
-features switched off until you configure them.
+**Every feature is unlocked for every user.** There are no tiers, no premium
+plans, no token gating, and no paywalls — whoever runs the bot decides how it
+behaves through the in-bot settings and presets.
+
+This repository also ships **no credentials of any kind**. Every wallet, API
+key, and admin ID is read from your own `.env` file. Out of the box it runs
+against the free public Solana RPC.
 
 ---
 
@@ -65,14 +68,11 @@ annotated list. Nothing else needs editing to run your own instance.
 - `ADMIN_IDS` — comma-separated Telegram user IDs that may run admin commands.
   Send `/myid` to your running bot to find yours. Blank means nobody is admin.
 
-**Optional** — each of these disables a feature while blank, rather than
+**Optional** — branding only. Each hides its button while blank, rather than
 falling back to anyone else's value:
 
 - `BOT_USERNAME`, `BRAND_HANDLE`, `TOKEN_NAME`, `SHARE_HASHTAG`,
-  `DISCORD_URL`, `TWITTER_URL`, `WEBSITE_URL` — branding and share buttons.
-- `BRAINROT_MINT` — your SPL token mint; enables token-gating and burn tiers.
-- `PAYMENT_WALLET` — the SOL address that receives payments. **Must be yours.**
-- `PAYMENT_WALLET_PRIVATE_KEY` — only needed for automatic affiliate payouts.
+  `DISCORD_URL`, `TWITTER_URL`, `WEBSITE_URL`.
 
 ---
 
@@ -103,8 +103,6 @@ utils/
 | Auto Exit | Stop-loss, take-profit, and max-hold exits |
 | Wallet Scout | Discovers and tracks wallet activity |
 | Raid Hub | Community campaigns with points and a leaderboard |
-| Alpha Network | Referral/affiliate signups with SOL payouts |
-| Token gating | Optional premium tiers unlocked by holding or burning your token |
 
 ---
 
@@ -120,13 +118,12 @@ Read this before you deploy anything.
 - **The SQLite database is sensitive.** It holds encrypted wallet private keys
   and Telegram user records. `*.db` is gitignored — keep it that way, and
   protect your backups as carefully as your `.env`.
-- **`PAYMENT_WALLET` must be an address you control.** If you leave it blank,
-  payment flows stay disabled instead of sending funds somewhere unintended.
 - **If a secret ever reaches a public repo, rotate it immediately** — revoke
   the bot token with @BotFather, roll the RPC key, and move any funds. Deleting
   the commit is not enough; assume it was scraped within minutes.
-- Use a dedicated hot wallet with a limited balance for
-  `PAYMENT_WALLET_PRIVATE_KEY`. Never your main wallet.
+- **Anyone who can message your bot gets full access to every feature.** There
+  is no tier system to limit them. If that matters, keep your bot private or
+  add your own access check in `utils/admin.py`.
 
 ## Disclaimer
 

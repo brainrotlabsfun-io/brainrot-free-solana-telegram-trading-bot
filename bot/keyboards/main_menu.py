@@ -34,10 +34,9 @@ def build_main_menu() -> InlineKeyboardMarkup:
     builder.row(
         InlineKeyboardButton(text="📈  VIEW MY PORTFOLIO  📉",  callback_data="menu:portfolio_guide"),
     )
-    # ── Row 7: Profile + Badges ───────────────────────────────────────────────
+    # ── Row 7: Profile ────────────────────────────────────────────────────────
     builder.row(
         InlineKeyboardButton(text="👤  PROFILE",              callback_data="profile:main"),
-        InlineKeyboardButton(text="🏅  BADGES",               callback_data="profile:badges"),
     )
     # ── Row 8: Raid Center + Raid Hub ─────────────────────────────────────────
     builder.row(
@@ -52,15 +51,7 @@ def build_main_menu() -> InlineKeyboardMarkup:
     builder.row(
         InlineKeyboardButton(text="❗  HELP  ❗",              callback_data="menu:help"),
     )
-    # ── Row 11: Supreme (burn to unlock) ──────────────────────────────────────
-    builder.row(
-        InlineKeyboardButton(text="👑  SUPREME ACCESS",       callback_data="supreme:main"),
-    )
-    # ── Row 12: Alpha Network (affiliate — beneath Supreme) ───────────────────
-    builder.row(
-        InlineKeyboardButton(text="🧠  ALPHA NETWORK",        callback_data="af:main"),
-    )
-    # ── Row 13: Community links ────────────────────────────────────────────────
+    # ── Row 11: Community links ────────────────────────────────────────────────
     # Each link is optional — set DISCORD_URL / TWITTER_URL / WEBSITE_URL in .env.
     # Buttons for unset links are simply omitted, and the row is skipped entirely
     # if none are configured.

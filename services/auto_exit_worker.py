@@ -1,7 +1,7 @@
 """
 services/auto_exit_worker.py
 ==============================
-Supreme Black Auto-Exit price watcher background loop.
+Auto-Exit price watcher background loop.
 
 Design:
   - Polls every POLL_INTERVAL seconds.

@@ -2,7 +2,7 @@
 services/sniper_service.py
 ============================
 Main coordinator for the Sniper Tool.
-Ties together: entitlements, token data, scoring, settings, blacklist.
+Ties together: token data, scoring, settings, blacklist.
 
 This is the primary entry point for the handler to call.
 """
@@ -11,8 +11,9 @@ import re
 import logging
 from typing import Optional
 
-from services.brainrot_token_gate import get_entitlements, SniperEntitlements
-from services.token_data_provider import get_token_summary, get_ranked_candidates_for_user
+from services.token_data_provider import (
+    get_token_summary, get_ranked_candidates_for_user, FEED_RESULT_LIMIT,
+)
 from services.sniper_score_service import score_token
 from services.sniper_settings_service import get_settings
 from services.sniper_blacklist_service import get_blacklist_addresses
@@ -50,20 +51,18 @@ async def analyze_token_for_user(
 ) -> dict:
     """
     Full token analysis pipeline:
-    1. Fetch entitlements
-    2. Fetch token data from DexScreener
-    3. Load user settings
-    4. Score token
+    1. Fetch token data from DexScreener
+    2. Load user settings
+    3. Score token
     Returns combined result dict.
     """
-    entitlements = await get_entitlements(user_id)
     settings     = await get_settings(user_id)
     token_data   = await get_token_summary(token_address)
 
     if not token_data:
         return {"error": "Token not found on DexScreener. Check the address and try again."}
 
-    score_result = score_token(token_data, settings, entitlements)
+    score_result = score_token(token_data, settings)
 
     return {
         "token":        token_data,
@@ -72,8 +71,6 @@ async def analyze_token_for_user(
         "risk_notes":   score_result["risk_notes"],
         "summary":      score_result["summary"],
         "premium_notes":score_result.get("premium_notes"),
-        "entitlements": entitlements,
-        "tier":         entitlements.tier,
     }
 
 
@@ -81,20 +78,17 @@ async def get_feed_for_user(user_id: int) -> dict:
     """
     Builds ranked launch feed for a user applying their settings + blacklist.
     """
-    entitlements = await get_entitlements(user_id)
     settings     = await get_settings(user_id)
     blacklist    = await get_blacklist_addresses(user_id)
 
     candidates   = await get_ranked_candidates_for_user(
-        user_id, settings, blacklist, entitlements
+        user_id, settings, blacklist
     )
 
     return {
         "candidates":   candidates,
-        "tier":         entitlements.tier,
-        "limit":        entitlements.feed_result_limit,
+        "limit":        FEED_RESULT_LIMIT,
         "count":        len(candidates),
-        "entitlements": entitlements,
     }
 
 

@@ -19,11 +19,8 @@ When Candle Sniper is DISABLED:
   - candle_sniper_settings.enabled is set to 0.
   - The CS worker stops processing for this user.
 
-Entitlements (Candle Sniper tier limits):
-  Tier          | Candidates | Max Positions | Config Access
-  Free          | 3          | 1             | Basic only
-  SUPREME       | 10         | 3             | Full
-  SUPREME BLACK | 20         | 5             | Full + partial TP
+Concurrent positions are governed by each user's own max_open_positions
+setting; candidate list sizing is set by the constants below.
 """
 
 import asyncio
@@ -41,54 +38,13 @@ logger = logging.getLogger(__name__)
 
 _DEXSCREENER_TIMEOUT = aiohttp.ClientTimeout(total=12)
 
-# ── Candle Sniper Entitlements ────────────────────────────────────────────────
+# ── Sizing constants ──────────────────────────────────────────────────────────
+# Not access tiers — these just keep result pages readable and API calls sane.
+# Concurrent position count is governed by each user's own max_open_positions
+# setting (see _DEFAULTS below).
 
-@dataclass
-class CSEntitlements:
-    tier:                  str
-    max_candidates:        int    # max tokens tracked simultaneously
-    max_open_positions:    int    # max concurrent CS positions
-    can_auto_buy:          bool
-    can_trailing_stop:     bool   # trailing stop exit logic
-    can_partial_tp:        bool   # partial take-profit (Supreme Black only)
-    can_full_config:       bool   # access to all settings fields
-    candidate_scan_limit:  int    # max candidates fetched per scan cycle
-
-
-def get_cs_entitlements(tier: str) -> CSEntitlements:
-    if tier == "supreme_black":
-        return CSEntitlements(
-            tier="supreme_black",
-            max_candidates=9999,   # unlimited
-            max_open_positions=9999,  # unlimited
-            can_auto_buy=True,
-            can_trailing_stop=True,
-            can_partial_tp=True,
-            can_full_config=True,
-            candidate_scan_limit=200,
-        )
-    if tier == "supreme":
-        return CSEntitlements(
-            tier="supreme",
-            max_candidates=50,
-            max_open_positions=15,
-            can_auto_buy=True,
-            can_trailing_stop=True,
-            can_partial_tp=False,
-            can_full_config=True,
-            candidate_scan_limit=100,
-        )
-    # Free tier
-    return CSEntitlements(
-        tier="free",
-        max_candidates=15,
-        max_open_positions=5,
-        can_auto_buy=True,
-        can_trailing_stop=False,
-        can_partial_tp=False,
-        can_full_config=False,   # basic settings only
-        candidate_scan_limit=30,
-    )
+CANDIDATE_DISPLAY_LIMIT = 50    # candidates shown on the candidates page
+CANDIDATE_SCAN_LIMIT    = 200   # candidates fetched per scan cycle
 
 
 # ── Default Settings ──────────────────────────────────────────────────────────

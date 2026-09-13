@@ -3,8 +3,8 @@ utils/sqlite_storage.py
 ========================
 Persistent SQLite-backed FSM storage for aiogram 3.
 
-Replaces MemoryStorage so that FSM states (like affiliate wallet prompts,
-sniper settings edits, supreme activation flows) survive bot restarts.
+Replaces MemoryStorage so that FSM states (sniper settings edits, preset
+creation, wallet prompts) survive bot restarts.
 
 Without this, every restart wipes all in-progress user flows and sends
 any follow-up text messages to the sniper catch-all ("Session expired").

@@ -20,7 +20,7 @@ DEFAULTS = {
     "default_slippage":           18.0,
     "strict_mode":                0,
     "preferred_platform":         "auto",
-    # SUPREME-only fields (stored for all, enforced by entitlements)
+    # Advanced filtering / ranking toggles
     "auto_filter_enabled":        0,
     "prioritize_fresh_launches":  0,
     "prioritize_liquidity_strength": 0,

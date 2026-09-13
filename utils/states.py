@@ -12,7 +12,7 @@ class StartRaidForm(StatesGroup):
     """
     Step-by-step flow for user-created raids.
     Steps 1-7 are message states (user types).
-    Steps 8-9 (premium_only, confirm) are resolved via inline keyboard callbacks.
+    Step 8 (confirm) is resolved via inline keyboard callbacks.
     """
     title         = State()   # 1 — raid title
     platform      = State()   # 2 — platform name
@@ -21,7 +21,6 @@ class StartRaidForm(StatesGroup):
     comment_ideas = State()   # 5 — optional comment suggestions
     hashtag_ideas = State()   # 6 — optional hashtags
     expiry_hours  = State()   # 7 — duration in hours
-    premium_only  = State()   # 8 — callback: hub:fsm:prem_yes / hub:fsm:prem_no
     confirm       = State()   # 9 — callback: hub:fsm:publish / hub:fsm:cancel
 
 
@@ -45,11 +44,6 @@ class LinkWalletState(StatesGroup):
     waiting_address = State()
 
 
-class SubmitBurnTxState(StatesGroup):
-    """FSM for submitting a burn transaction signature for SUPREME activation."""
-    waiting_tx_signature = State()
-
-
 class WithdrawState(StatesGroup):
     """FSM for withdrawing SOL from the bot wallet to an external address."""
     waiting_address = State()
@@ -57,21 +51,7 @@ class WithdrawState(StatesGroup):
 
 
 class AutoExitFSM(StatesGroup):
-    """FSM states for the Supreme Black Auto-Exit Manager (defined in auto_exit.py AEState)."""
+    """FSM states for the Auto-Exit Manager (defined in auto_exit.py AEState)."""
     clone_name  = State()
     edit_field  = State()
 
-
-class AffiliateWalletState(StatesGroup):
-    """FSM for optionally entering a referral/affiliate wallet during Supreme signup."""
-    waiting_affiliate_wallet = State()
-
-
-class AffiliateSubmitTxState(StatesGroup):
-    """FSM for user submitting their SOL payment TX signature for manual verification."""
-    waiting_tx_signature = State()
-
-
-class AffiliateMarkPaidState(StatesGroup):
-    """FSM for admin entering a payout TX hash when marking a commission as paid."""
-    waiting_tx_hash = State()

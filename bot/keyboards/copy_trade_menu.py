@@ -6,10 +6,12 @@ All inline keyboards for the Copy Trading module.
 
 from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton
 from aiogram.utils.keyboard import InlineKeyboardBuilder
+
+from services.copy_trade_service import MAX_WALLETS
 from bot.keyboards.share_templates import COPY_TRADE_SHARE_URL
 
 
-def build_copy_trade_main(s: dict, wallet_count: int, ents) -> InlineKeyboardMarkup:
+def build_copy_trade_main(s: dict, wallet_count: int) -> InlineKeyboardMarkup:
     builder = InlineKeyboardBuilder()
 
     enabled_icon  = "🟢 ON"     if s.get("enabled")      else "🔴 OFF"
@@ -21,7 +23,7 @@ def build_copy_trade_main(s: dict, wallet_count: int, ents) -> InlineKeyboardMar
     )
     builder.row(
         InlineKeyboardButton(
-            text=f"👛 TRACKED WALLETS ({wallet_count}/{ents.max_wallets})",
+            text=f"👛 TRACKED WALLETS ({wallet_count}/{MAX_WALLETS})",
             callback_data="ct:wallets",
         ),
     )
@@ -34,16 +36,12 @@ def build_copy_trade_main(s: dict, wallet_count: int, ents) -> InlineKeyboardMar
         InlineKeyboardButton(text="🐦  SHARE ON X",         url=COPY_TRADE_SHARE_URL),
     )
 
-    if ents.can_use_blacklist or ents.can_use_whitelist:
-        row = []
-        if ents.can_use_blacklist:
-            row.append(InlineKeyboardButton(text="🚫 BLACKLIST", callback_data="ct:blacklist"))
-        if ents.can_use_whitelist:
-            row.append(InlineKeyboardButton(text="✅ WHITELIST", callback_data="ct:whitelist"))
-        builder.row(*row)
+    builder.row(
+        InlineKeyboardButton(text="🚫 BLACKLIST", callback_data="ct:blacklist"),
+        InlineKeyboardButton(text="✅ WHITELIST", callback_data="ct:whitelist"),
+    )
 
     builder.row(
-        InlineKeyboardButton(text="👑 SUPREME ACCESS",        callback_data="supreme:main"),
     )
     builder.row(
         InlineKeyboardButton(text="⬅️  BACK",              callback_data="menu:back"),
@@ -51,7 +49,7 @@ def build_copy_trade_main(s: dict, wallet_count: int, ents) -> InlineKeyboardMar
     return builder.as_markup()
 
 
-def build_wallets_list(wallets: list[dict], ents) -> InlineKeyboardMarkup:
+def build_wallets_list(wallets: list[dict]) -> InlineKeyboardMarkup:
     builder = InlineKeyboardBuilder()
     for w in wallets[:20]:
         addr    = w["wallet_address"]
@@ -79,7 +77,7 @@ def build_wallets_list(wallets: list[dict], ents) -> InlineKeyboardMarkup:
     return builder.as_markup()
 
 
-def build_settings_menu(s: dict, ents) -> InlineKeyboardMarkup:
+def build_settings_menu(s: dict) -> InlineKeyboardMarkup:
     builder = InlineKeyboardBuilder()
 
     buys_icon  = "✅" if s.get("copy_buys")  else "⬜"
@@ -88,7 +86,7 @@ def build_settings_menu(s: dict, ents) -> InlineKeyboardMarkup:
         InlineKeyboardButton(text=f"{buys_icon} COPY BUYS",  callback_data="ct:toggle_buys"),
         InlineKeyboardButton(
             text=f"{sells_icon} COPY SELLS",
-            callback_data="ct:toggle_sells" if ents.can_copy_sells else "ct:noop_sells",
+            callback_data="ct:toggle_sells",
         ),
     )
 
@@ -99,7 +97,7 @@ def build_settings_menu(s: dict, ents) -> InlineKeyboardMarkup:
         InlineKeyboardButton(text=f"{f_icon} FIXED SIZE",  callback_data="ct:mode:fixed"),
         InlineKeyboardButton(
             text=f"{p_icon} % SIZE",
-            callback_data="ct:mode:percentage" if ents.can_use_percentage else "ct:noop_pct",
+            callback_data="ct:mode:percentage",
         ),
     )
 
@@ -118,14 +116,12 @@ def build_settings_menu(s: dict, ents) -> InlineKeyboardMarkup:
             ),
         )
 
-    if ents.can_use_max_buy_prot:
-        builder.row(
-            InlineKeyboardButton(
-                text=f"🛑 MAX BUY: {s.get('max_buy_amount_sol', 0.5):.4f} SOL",
-                callback_data="ct:set:max_buy_amount_sol",
-            ),
-        )
-
+    builder.row(
+        InlineKeyboardButton(
+            text=f"🛑 MAX BUY: {s.get('max_buy_amount_sol', 0.5):.4f} SOL",
+            callback_data="ct:set:max_buy_amount_sol",
+        ),
+    )
     builder.row(
         InlineKeyboardButton(
             text=f"📐 SLIPPAGE: {s.get('max_slippage', 15):.1f}%",
@@ -137,26 +133,22 @@ def build_settings_menu(s: dict, ents) -> InlineKeyboardMarkup:
         ),
     )
 
-    if ents.can_use_liq_filter:
-        builder.row(
-            InlineKeyboardButton(
-                text=f"💧 MIN LIQUIDITY: ${s.get('min_liquidity_usd', 0):.0f}",
-                callback_data="ct:set:min_liquidity_usd",
-            ),
-        )
-
-    if ents.can_use_cooldown:
-        builder.row(
-            InlineKeyboardButton(
-                text=f"⏳ COOLDOWN: {s.get('cooldown_seconds', 30)}S",
-                callback_data="ct:set:cooldown_seconds",
-            ),
-            InlineKeyboardButton(
-                text=f"⏱ MAX/HOUR: {s.get('max_trades_per_hour', 30)}",
-                callback_data="ct:set:max_trades_per_hour",
-            ),
-        )
-
+    builder.row(
+        InlineKeyboardButton(
+            text=f"💧 MIN LIQUIDITY: ${s.get('min_liquidity_usd', 0):.0f}",
+            callback_data="ct:set:min_liquidity_usd",
+        ),
+    )
+    builder.row(
+        InlineKeyboardButton(
+            text=f"⏳ COOLDOWN: {s.get('cooldown_seconds', 30)}S",
+            callback_data="ct:set:cooldown_seconds",
+        ),
+        InlineKeyboardButton(
+            text=f"⏱ MAX/HOUR: {s.get('max_trades_per_hour', 30)}",
+            callback_data="ct:set:max_trades_per_hour",
+        ),
+    )
     builder.row(
         InlineKeyboardButton(text="⬅️  BACK", callback_data="ct:main"),
     )

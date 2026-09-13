@@ -34,6 +34,7 @@ from bot.keyboards.copy_trade_menu import (
 )
 from utils.copy_trade_states import CopyTradeStates
 from utils.config import settings
+from services.copy_trade_service import MAX_WALLETS, TOKEN_LIST_LIMIT
 from utils.share_utils import bot_link as _bot_link, website_buttons as _website_buttons, share_footer as _share_footer
 
 logger = logging.getLogger(__name__)
@@ -56,11 +57,10 @@ _FIELD_META = {
 
 async def _render_main(user_id: int) -> tuple[str, object]:
     from services.copy_trade_service import (
-        get_copy_trade_settings, get_tracked_wallets, get_copy_trade_entitlements,
+        get_copy_trade_settings, get_tracked_wallets, MAX_WALLETS, TOKEN_LIST_LIMIT,
     )
     s       = await get_copy_trade_settings(user_id)
     wallets = await get_tracked_wallets(user_id)
-    ents    = await get_copy_trade_entitlements(user_id)
 
     active    = sum(1 for w in wallets if w.get("enabled"))
     mode      = s.get("copy_size_mode") or "fixed"
@@ -70,16 +70,6 @@ async def _render_main(user_id: int) -> tuple[str, object]:
         else f"{s.get('percentage_amount', 10):.1f}% of leader"
     )
 
-    tier = ents.tier
-    if tier == "supreme_black":
-        tier_label = "🔱 SUPREME BLACK"
-        tier_bar   = "▓▓▓▓▓▓▓▓▓▓ MAX TIER"
-    elif tier == "supreme":
-        tier_label = "👑 SUPREME"
-        tier_bar   = "▓▓▓▓▓▓▓░░░ CLEARANCE: HIGH"
-    else:
-        tier_label = "🆓 FREE"
-        tier_bar   = "▓░░░░░░░░░ CLEARANCE: BASIC"
 
     enabled    = s.get("enabled") and not s.get("kill_switch")
     ks_active  = bool(s.get("kill_switch"))
@@ -92,14 +82,13 @@ async def _render_main(user_id: int) -> tuple[str, object]:
     ks_warn = "\n⛔ <b>Kill switch ACTIVE — no trades executing.</b>" if ks_active else ""
     text = (
         f"📋 <b>COPY TRADE</b>\n"
-        f"<code>{tier_bar}  {tier_label}</code>\n\n"
-        f"<code>{power_icon}   👛 {len(wallets)}/{ents.max_wallets} wallets  ({active} active)</code>\n"
+        f"<code>{power_icon}   👛 {len(wallets)}/{MAX_WALLETS} wallets  ({active} active)</code>\n"
         f"<code>📥 buys {buys_icon}  📤 sells {sells_icon}  {size_str}/trade</code>\n"
         f"<code>📐 {s.get('max_slippage', 15):.1f}% slip   ⏱ {s.get('max_trades_per_hour', 30)}/hr max</code>"
         f"{ks_warn}"
     )
 
-    kb = build_copy_trade_main(s, len(wallets), ents)
+    kb = build_copy_trade_main(s, len(wallets))
     return text, kb
 
 
@@ -143,26 +132,23 @@ async def cmd_ct_remove(message: Message):
     if not wallets:
         await message.answer("You have no tracked wallets.")
         return
-    from services.copy_trade_service import get_copy_trade_entitlements
-    ents = await get_copy_trade_entitlements(message.from_user.id)
-    kb   = build_wallets_list(wallets, ents)
+        kb   = build_wallets_list(wallets)
     await message.answer("Tap 🗑 next to a wallet to remove it:", reply_markup=kb)
 
 
 @router.message(Command("copytrade_wallets"))
 async def cmd_ct_wallets(message: Message):
-    from services.copy_trade_service import get_tracked_wallets, get_copy_trade_entitlements
+    from services.copy_trade_service import get_tracked_wallets
     wallets = await get_tracked_wallets(message.from_user.id)
-    ents    = await get_copy_trade_entitlements(message.from_user.id)
     if not wallets:
         await message.answer(
             "No wallets tracked yet. Use /copytrade_add to add one.",
             reply_markup=build_back_to_ct(),
         )
         return
-    kb = build_wallets_list(wallets, ents)
+    kb = build_wallets_list(wallets)
     await message.answer(
-        f"👛 <b>Tracked Wallets</b> ({len(wallets)}/{ents.max_wallets})\n"
+        f"👛 <b>Tracked Wallets</b> ({len(wallets)}/{MAX_WALLETS})\n"
         f"Tap an address to toggle, 🗑 to remove.",
         reply_markup=kb,
     )
@@ -170,10 +156,9 @@ async def cmd_ct_wallets(message: Message):
 
 @router.message(Command("copytrade_settings"))
 async def cmd_ct_settings(message: Message):
-    from services.copy_trade_service import get_copy_trade_settings, get_copy_trade_entitlements
+    from services.copy_trade_service import get_copy_trade_settings
     s    = await get_copy_trade_settings(message.from_user.id)
-    ents = await get_copy_trade_entitlements(message.from_user.id)
-    kb   = build_settings_menu(s, ents)
+    kb   = build_settings_menu(s)
     await message.answer("⚙️ <b>Copy Trade Settings</b>", reply_markup=kb)
 
 
@@ -226,14 +211,13 @@ async def cb_ct_kill(call: CallbackQuery):
 
 @router.callback_query(F.data == "ct:wallets")
 async def cb_ct_wallets(call: CallbackQuery):
-    from services.copy_trade_service import get_tracked_wallets, get_copy_trade_entitlements
+    from services.copy_trade_service import get_tracked_wallets
     user_id = call.from_user.id
     wallets = await get_tracked_wallets(user_id)
-    ents    = await get_copy_trade_entitlements(user_id)
-    kb      = build_wallets_list(wallets, ents)
+    kb      = build_wallets_list(wallets)
     count   = len(wallets)
     await call.message.edit_text(
-        f"👛 <b>Tracked Wallets</b> ({count}/{ents.max_wallets})\n\n"
+        f"👛 <b>Tracked Wallets</b> ({count}/{MAX_WALLETS})\n\n"
         f"Tap address row to pause/resume. Tap 🗑 to remove.",
         reply_markup=kb,
     )
@@ -255,7 +239,7 @@ async def cb_ct_wallet_add(call: CallbackQuery, state: FSMContext):
 @router.callback_query(F.data.startswith("ct:wallet_toggle:"))
 async def cb_ct_wallet_toggle(call: CallbackQuery):
     from services.copy_trade_service import (
-        toggle_tracked_wallet, get_tracked_wallets, get_copy_trade_entitlements
+        toggle_tracked_wallet, get_tracked_wallets
     )
     wallet_id = int(call.data.split(":")[2])
     new_state = await toggle_tracked_wallet(call.from_user.id, wallet_id)
@@ -263,8 +247,7 @@ async def cb_ct_wallet_toggle(call: CallbackQuery):
         await call.answer("Wallet not found.", show_alert=True)
         return
     wallets = await get_tracked_wallets(call.from_user.id)
-    ents    = await get_copy_trade_entitlements(call.from_user.id)
-    kb      = build_wallets_list(wallets, ents)
+    kb      = build_wallets_list(wallets)
     await call.message.edit_reply_markup(reply_markup=kb)
     await call.answer("🟢 Enabled" if new_state else "⏸ Paused")
 
@@ -272,7 +255,7 @@ async def cb_ct_wallet_toggle(call: CallbackQuery):
 @router.callback_query(F.data.startswith("ct:wallet_rm:"))
 async def cb_ct_wallet_rm(call: CallbackQuery):
     from services.copy_trade_service import (
-        remove_tracked_wallet, get_tracked_wallets, get_copy_trade_entitlements
+        remove_tracked_wallet, get_tracked_wallets
     )
     wallet_id = int(call.data.split(":")[2])
     removed   = await remove_tracked_wallet(call.from_user.id, wallet_id)
@@ -280,10 +263,9 @@ async def cb_ct_wallet_rm(call: CallbackQuery):
         await call.answer("Wallet not found.", show_alert=True)
         return
     wallets = await get_tracked_wallets(call.from_user.id)
-    ents    = await get_copy_trade_entitlements(call.from_user.id)
-    kb      = build_wallets_list(wallets, ents)
+    kb      = build_wallets_list(wallets)
     await call.message.edit_text(
-        f"👛 <b>Tracked Wallets</b> ({len(wallets)}/{ents.max_wallets})\n\n"
+        f"👛 <b>Tracked Wallets</b> ({len(wallets)}/{MAX_WALLETS})\n\n"
         f"Wallet removed.",
         reply_markup=kb,
     )
@@ -350,54 +332,44 @@ async def fsm_wallet_label(message: Message, state: FSMContext):
 
 @router.callback_query(F.data == "ct:settings")
 async def cb_ct_settings(call: CallbackQuery):
-    from services.copy_trade_service import get_copy_trade_settings, get_copy_trade_entitlements
+    from services.copy_trade_service import get_copy_trade_settings
     s    = await get_copy_trade_settings(call.from_user.id)
-    ents = await get_copy_trade_entitlements(call.from_user.id)
-    kb   = build_settings_menu(s, ents)
+    kb   = build_settings_menu(s)
     await call.message.edit_text("⚙️ <b>Copy Trade Settings</b>", reply_markup=kb)
     await call.answer()
 
 
 @router.callback_query(F.data == "ct:toggle_buys")
 async def cb_toggle_buys(call: CallbackQuery):
-    from services.copy_trade_service import get_copy_trade_settings, update_copy_trade_field, get_copy_trade_entitlements
+    from services.copy_trade_service import get_copy_trade_settings, update_copy_trade_field
     s = await get_copy_trade_settings(call.from_user.id)
     await update_copy_trade_field(call.from_user.id, "copy_buys", 0 if s.get("copy_buys") else 1)
     s    = await get_copy_trade_settings(call.from_user.id)
-    ents = await get_copy_trade_entitlements(call.from_user.id)
-    await call.message.edit_reply_markup(reply_markup=build_settings_menu(s, ents))
+    await call.message.edit_reply_markup(reply_markup=build_settings_menu(s))
     await call.answer()
 
 
 @router.callback_query(F.data == "ct:toggle_sells")
 async def cb_toggle_sells(call: CallbackQuery):
     from services.copy_trade_service import (
-        get_copy_trade_settings, update_copy_trade_field, get_copy_trade_entitlements
+        get_copy_trade_settings, update_copy_trade_field
     )
-    ents = await get_copy_trade_entitlements(call.from_user.id)
-    if not ents.can_copy_sells:
-        await call.answer("🔒 Copy sells requires SUPREME or higher.", show_alert=True)
-        return
     s = await get_copy_trade_settings(call.from_user.id)
     await update_copy_trade_field(call.from_user.id, "copy_sells", 0 if s.get("copy_sells") else 1)
     s = await get_copy_trade_settings(call.from_user.id)
-    await call.message.edit_reply_markup(reply_markup=build_settings_menu(s, ents))
+    await call.message.edit_reply_markup(reply_markup=build_settings_menu(s))
     await call.answer()
 
 
 @router.callback_query(F.data.startswith("ct:mode:"))
 async def cb_ct_mode(call: CallbackQuery):
     from services.copy_trade_service import (
-        update_copy_trade_field, get_copy_trade_settings, get_copy_trade_entitlements
+        update_copy_trade_field, get_copy_trade_settings
     )
     mode = call.data.split(":")[2]
-    ents = await get_copy_trade_entitlements(call.from_user.id)
-    if mode == "percentage" and not ents.can_use_percentage:
-        await call.answer("🔒 Percentage sizing requires SUPREME or higher.", show_alert=True)
-        return
     await update_copy_trade_field(call.from_user.id, "copy_size_mode", mode)
     s = await get_copy_trade_settings(call.from_user.id)
-    await call.message.edit_reply_markup(reply_markup=build_settings_menu(s, ents))
+    await call.message.edit_reply_markup(reply_markup=build_settings_menu(s))
     await call.answer(f"Mode set to {mode}")
 
 
@@ -454,15 +426,14 @@ async def fsm_field_value(message: Message, state: FSMContext):
         return
 
     await state.clear()
-    from services.copy_trade_service import update_copy_trade_field, get_copy_trade_settings, get_copy_trade_entitlements
+    from services.copy_trade_service import update_copy_trade_field, get_copy_trade_settings
     await update_copy_trade_field(message.from_user.id, field, value)
     s    = await get_copy_trade_settings(message.from_user.id)
-    ents = await get_copy_trade_entitlements(message.from_user.id)
     name = _FIELD_META[field][0]
     unit = _FIELD_META[field][1]
     await message.answer(
         f"✅ <b>{name}</b> set to <b>{value} {unit}</b>",
-        reply_markup=build_settings_menu(s, ents),
+        reply_markup=build_settings_menu(s),
     )
 
 
@@ -470,15 +441,11 @@ async def fsm_field_value(message: Message, state: FSMContext):
 
 @router.callback_query(F.data == "ct:blacklist")
 async def cb_ct_blacklist(call: CallbackQuery):
-    from services.copy_trade_service import get_token_blacklist, get_copy_trade_entitlements
-    ents = await get_copy_trade_entitlements(call.from_user.id)
-    if not ents.can_use_blacklist:
-        await call.answer("🔒 Token blacklist requires SUPREME or higher.", show_alert=True)
-        return
+    from services.copy_trade_service import get_token_blacklist
     entries = await get_token_blacklist(call.from_user.id)
     kb = build_blacklist_menu(entries)
     await call.message.edit_text(
-        f"🚫 <b>Token Blacklist</b> ({len(entries)}/{ents.blacklist_limit})\n\n"
+        f"🚫 <b>Token Blacklist</b> ({len(entries)}/{TOKEN_LIST_LIMIT})\n\n"
         f"Tokens here will never be copy traded.",
         reply_markup=kb,
     )
@@ -498,7 +465,7 @@ async def cb_ct_bl_add(call: CallbackQuery, state: FSMContext):
 @router.message(CopyTradeStates.waiting_for_bl_token)
 async def fsm_bl_token(message: Message, state: FSMContext):
     await state.clear()
-    from services.copy_trade_service import add_to_token_blacklist, get_token_blacklist, get_copy_trade_entitlements
+    from services.copy_trade_service import add_to_token_blacklist, get_token_blacklist
     ok, err = await add_to_token_blacklist(message.from_user.id, message.text.strip() if message.text else "")
     if ok:
         entries = await get_token_blacklist(message.from_user.id)
@@ -513,14 +480,13 @@ async def fsm_bl_token(message: Message, state: FSMContext):
 @router.callback_query(F.data.startswith("ct:bl_rm:"))
 async def cb_ct_bl_rm(call: CallbackQuery):
     from services.copy_trade_service import (
-        remove_from_token_blacklist, get_token_blacklist, get_copy_trade_entitlements
+        remove_from_token_blacklist, get_token_blacklist
     )
     entry_id = int(call.data.split(":")[2])
     await remove_from_token_blacklist(call.from_user.id, entry_id)
     entries = await get_token_blacklist(call.from_user.id)
-    ents    = await get_copy_trade_entitlements(call.from_user.id)
     await call.message.edit_text(
-        f"🚫 <b>Token Blacklist</b> ({len(entries)}/{ents.blacklist_limit})",
+        f"🚫 <b>Token Blacklist</b> ({len(entries)}/{TOKEN_LIST_LIMIT})",
         reply_markup=build_blacklist_menu(entries),
     )
     await call.answer("🗑 Removed")
@@ -530,11 +496,7 @@ async def cb_ct_bl_rm(call: CallbackQuery):
 
 @router.callback_query(F.data == "ct:whitelist")
 async def cb_ct_whitelist(call: CallbackQuery):
-    from services.copy_trade_service import get_token_whitelist, get_copy_trade_entitlements
-    ents = await get_copy_trade_entitlements(call.from_user.id)
-    if not ents.can_use_whitelist:
-        await call.answer("🔒 Whitelist requires SUPREME BLACK.", show_alert=True)
-        return
+    from services.copy_trade_service import get_token_whitelist
     entries = await get_token_whitelist(call.from_user.id)
     await call.message.edit_text(
         f"✅ <b>Token Whitelist</b> ({len(entries)} tokens)\n\n"
@@ -680,8 +642,6 @@ async def cb_ct_share(call: CallbackQuery):
         f"&text={quote(tweet)}"
     )
 
-    _BRAINROT_CA   = settings.BRAINROT_MINT
-    _INCINERATOR   = "1nc1nerator11111111111111111111111111111111"
 
     # Tracked wallets as individual tap-to-copy lines
     from services.copy_trade_service import get_tracked_wallets
@@ -697,11 +657,7 @@ async def cb_ct_share(call: CallbackQuery):
         f"📣 <b>Share Your Copy Trade Results — {period_label}</b>\n"
         f"{'━' * 30}\n\n"
         + (f"<b>Tracked wallets:</b>\n{wallet_lines}\n" if wallet_lines else "")
-        + f"<b>$BRAINROT CA:</b>\n"
-        f"<pre>{_BRAINROT_CA}</pre>\n"
-        f"<b>Burn address:</b>\n"
-        f"<pre>{_INCINERATOR}</pre>\n\n"
-        f"<b>Post content (tap to copy):</b>\n"
+        + f"<b>Post content (tap to copy):</b>\n"
         f"{'─' * 30}\n\n"
         f"<code>{tweet}</code>\n\n"
         f"{'─' * 30}\n\n"
@@ -833,8 +789,6 @@ async def _send_tweet_recap(user_id: int, message, edit: bool = False, period_ho
 @router.callback_query(F.data.in_({"ct:noop_sells", "ct:noop_pct"}))
 async def cb_noop(call: CallbackQuery):
     msgs = {
-        "ct:noop_sells": "🔒 Copy sells requires SUPREME or higher.",
-        "ct:noop_pct":   "🔒 Percentage sizing requires SUPREME or higher.",
     }
     await call.answer(msgs.get(call.data, "🔒 Requires upgrade."), show_alert=True)
 

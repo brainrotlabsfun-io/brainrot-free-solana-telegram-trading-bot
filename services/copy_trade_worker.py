@@ -331,20 +331,19 @@ async def _maybe_copy(bot, wallet_address: str, swap: dict, user_row: dict) -> N
     Gate order:
       1. Direction filter (copy_buys / copy_sells setting)
       2. Duplicate TX check
-      3. Tier limits
-      4. Hourly rate limit
-      5. Cooldown between trades
-      6. Token blacklist
-      7. Token whitelist (Supreme Black — if whitelist not empty, must be in it)
-      8. Liquidity filter (Supreme / Supreme Black)
-      9. Max buy protection
-     10. Balance check
-     11. Execute
+      3. Hourly rate limit
+      4. Cooldown between trades
+      5. Token blacklist
+      6. Token whitelist (if non-empty, token must be in it)
+      7. Liquidity filter
+      8. Max buy protection
+      9. Balance check
+     10. Execute
     """
     from services.copy_trade_service import (
         is_tx_processed, mark_tx_processed, count_copy_trades_last_hour,
         get_last_trade_time, log_copy_trade_job, update_copy_trade_job,
-        get_copy_trade_entitlements, get_blacklisted_addresses,
+        MAX_TRADES_PER_HOUR, get_blacklisted_addresses,
         get_whitelisted_addresses,
     )
     from services.bot_wallet_service import get_or_create_bot_wallet, get_sol_balance
@@ -368,84 +367,74 @@ async def _maybe_copy(bot, wallet_address: str, swap: dict, user_row: dict) -> N
     if await is_tx_processed(sig, user_id):
         return
 
-    # 3. Tier entitlements
-    ents = await get_copy_trade_entitlements(user_id)
-    if direction == "sell" and not ents.can_copy_sells:
-        await mark_tx_processed(sig, user_id, wallet_address, token, direction)
-        return
-
-    # 4. Hourly rate limit
+    # 3. Hourly rate limit
     trades_this_hour = await count_copy_trades_last_hour(user_id)
     max_per_hour     = min(int(user_row.get("max_trades_per_hour") or 30),
-                           ents.max_trades_per_hour)
+                           MAX_TRADES_PER_HOUR)
     if trades_this_hour >= max_per_hour:
         logger.info(f"Copy trade rate-limited user={user_id} ({trades_this_hour}/{max_per_hour}/hr)")
         return
 
-    # 5. Cooldown
-    if ents.can_use_cooldown:
-        cooldown = int(user_row.get("cooldown_seconds") or 0)
-        if cooldown > 0:
-            last_ts = await get_last_trade_time(user_id)
-            elapsed = time.time() - last_ts
-            if elapsed < cooldown:
-                logger.info(f"CT skip (cooldown) user={user_id} ({elapsed:.0f}s < {cooldown}s)")
-                return
+    # 4. Cooldown
+    cooldown = int(user_row.get("cooldown_seconds") or 0)
+    if cooldown > 0:
+        last_ts = await get_last_trade_time(user_id)
+        elapsed = time.time() - last_ts
+        if elapsed < cooldown:
+            logger.info(f"CT skip (cooldown) user={user_id} ({elapsed:.0f}s < {cooldown}s)")
+            return
 
-    # 6. Token blacklist
-    if ents.can_use_blacklist:
-        bl = await get_blacklisted_addresses(user_id)
-        if token in bl:
-            logger.info(f"Copy trade skipped (blacklisted) user={user_id} token={token[:8]}")
+    # 5. Token blacklist
+    bl = await get_blacklisted_addresses(user_id)
+    if token in bl:
+        logger.info(f"Copy trade skipped (blacklisted) user={user_id} token={token[:8]}")
+        job_id = await log_copy_trade_job(user_id, wallet_address, token, direction,
+                                          leader_sol, 0.0, sig)
+        await update_copy_trade_job(job_id, "skipped", skip_reason="token blacklisted")
+        await mark_tx_processed(sig, user_id, wallet_address, token, direction)
+        _stats["trades_skipped"] += 1
+        return
+
+    # 6. Token whitelist (only enforced when whitelist is non-empty)
+    wl = await get_whitelisted_addresses(user_id)
+    if wl and token not in wl:
+        logger.info(f"Copy trade skipped (not whitelisted) user={user_id} token={token[:8]}")
+        job_id = await log_copy_trade_job(user_id, wallet_address, token, direction,
+                                          leader_sol, 0.0, sig)
+        await update_copy_trade_job(job_id, "skipped", skip_reason="not in whitelist")
+        await mark_tx_processed(sig, user_id, wallet_address, token, direction)
+        _stats["trades_skipped"] += 1
+        return
+
+    # 7. Liquidity filter
+    min_liq = float(user_row.get("min_liquidity_usd") or 0)
+    if min_liq > 0:
+        liq = await _get_token_liquidity(token)
+        if liq is not None and liq < min_liq:
+            logger.info(
+                f"Copy trade skipped (low liq ${liq:.0f} < ${min_liq:.0f}) "
+                f"user={user_id} token={token[:8]}"
+            )
             job_id = await log_copy_trade_job(user_id, wallet_address, token, direction,
                                               leader_sol, 0.0, sig)
-            await update_copy_trade_job(job_id, "skipped", skip_reason="token blacklisted")
+            await update_copy_trade_job(job_id, "skipped", skip_reason=f"low liquidity ${liq:.0f}")
             await mark_tx_processed(sig, user_id, wallet_address, token, direction)
             _stats["trades_skipped"] += 1
             return
 
-    # 7. Token whitelist (only enforced when whitelist is non-empty)
-    if ents.can_use_whitelist:
-        wl = await get_whitelisted_addresses(user_id)
-        if wl and token not in wl:
-            logger.info(f"Copy trade skipped (not whitelisted) user={user_id} token={token[:8]}")
-            job_id = await log_copy_trade_job(user_id, wallet_address, token, direction,
-                                              leader_sol, 0.0, sig)
-            await update_copy_trade_job(job_id, "skipped", skip_reason="not in whitelist")
-            await mark_tx_processed(sig, user_id, wallet_address, token, direction)
-            _stats["trades_skipped"] += 1
-            return
-
-    # 8. Liquidity filter
-    if ents.can_use_liq_filter:
-        min_liq = float(user_row.get("min_liquidity_usd") or 0)
-        if min_liq > 0:
-            liq = await _get_token_liquidity(token)
-            if liq is not None and liq < min_liq:
-                logger.info(
-                    f"Copy trade skipped (low liq ${liq:.0f} < ${min_liq:.0f}) "
-                    f"user={user_id} token={token[:8]}"
-                )
-                job_id = await log_copy_trade_job(user_id, wallet_address, token, direction,
-                                                  leader_sol, 0.0, sig)
-                await update_copy_trade_job(job_id, "skipped", skip_reason=f"low liquidity ${liq:.0f}")
-                await mark_tx_processed(sig, user_id, wallet_address, token, direction)
-                _stats["trades_skipped"] += 1
-                return
-
-    # 9. Compute copy trade size
+    # 8. Compute copy trade size
     copy_size_mode  = user_row.get("copy_size_mode") or "fixed"
     fixed_amount    = float(user_row.get("fixed_amount_sol") or 0.05)
     pct_amount      = float(user_row.get("percentage_amount") or 10.0)
     max_buy         = float(user_row.get("max_buy_amount_sol") or 0.5)
 
-    if copy_size_mode == "percentage" and ents.can_use_percentage:
+    if copy_size_mode == "percentage":
         copy_sol = leader_sol * (pct_amount / 100.0)
     else:
         copy_sol = fixed_amount
 
     # Enforce max buy protection
-    if ents.can_use_max_buy_prot and max_buy > 0:
+    if max_buy > 0:
         copy_sol = min(copy_sol, max_buy)
 
     copy_sol = max(copy_sol, 0.001)   # minimum viable trade

@@ -194,8 +194,8 @@ SOLANA_RPC_URLS=https://mainnet.helius-rpc.com/?api-key=YOUR_OWN_KEY,https://api
 
 ## Step 10 — Optional extras
 
-All optional. Each stays disabled while blank — nothing silently falls back
-to another operator's settings.
+All optional, all branding. Each stays hidden while blank — nothing silently
+falls back to another operator's settings.
 
 **Branding and share buttons**
 
@@ -209,26 +209,6 @@ DISCORD_URL=
 TWITTER_URL=
 ```
 
-**Your own token gating**
-
-```
-BRAINROT_MINT=YourSplTokenMintAddress
-```
-
-**Taking payments** — `PAYMENT_WALLET` must be a wallet you control.
-
-```
-PAYMENT_WALLET=YourSolanaAddressHere
-```
-
-For automatic affiliate payouts you also need the private key of the sending
-wallet. Use a dedicated hot wallet holding only what you can afford to lose:
-
-```
-PAYMENT_WALLET_PRIVATE_KEY=base58_private_key
-```
-
----
 
 ## Keeping it online
 

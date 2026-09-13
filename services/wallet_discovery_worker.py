@@ -38,8 +38,6 @@ Pipeline (runs every DISCOVERY_INTERVAL_HOURS hours):
 
 Tier gating:
   FREE          — can view presets + subscribe, max 3 wallets (shared with manual)
-  SUPREME       — full access, max 20
-  SUPREME BLACK — full access, max 500
 """
 
 import asyncio
@@ -448,16 +446,15 @@ async def _sync_user_copy_list(user_id: int) -> int:
     Returns count of wallets added.
     """
     from services.copy_trade_service import (
-        add_tracked_wallet, get_tracked_wallets, get_copy_trade_entitlements
+        add_tracked_wallet, get_tracked_wallets, MAX_WALLETS
     )
 
     subs  = await get_user_subscriptions(user_id)
     if not subs:
         return 0
 
-    ents    = await get_copy_trade_entitlements(user_id)
     current = await get_tracked_wallets(user_id)
-    slots   = ents.max_wallets - len(current)
+    slots   = MAX_WALLETS - len(current)
     if slots <= 0:
         return 0
 

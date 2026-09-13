@@ -522,7 +522,7 @@ async def tut_sniper_4(callback: CallbackQuery) -> None:
         "╚══════════════════════════════════╝</code>\n\n"
         "🔑 <b>Why Quick Flip works:</b> Taking 60% at TP1 means once "
         "TP1 fires, you're already in profit — even if the rest dumps to zero.\n\n"
-        "Navigate to <b>⬛ SUPREME → 📡 Positions & Config → ⭐ Select Exit Preset</b>\n"
+        "Navigate to <b>⬛ AUTO-EXIT → 📡 Positions & Config → ⭐ Select Exit Preset</b>\n"
         "and tap <b>⚡ Quick Flip</b> — this also activates auto-exit automatically."
     )
     kb = _kb(
@@ -801,7 +801,7 @@ async def tut_copy_2(callback: CallbackQuery) -> None:
         "  2. Check <a href='https://solscan.io'>solscan.io</a> for wallet PnL\n"
         "  3. Follow on-chain influencers — their wallets are often public\n"
         "  4. Look for wallets with >60% win rate on memecoins\n\n"
-        "<b>Supreme Black:</b> Copy up to 500 wallets simultaneously."
+        "You can copy up to 500 wallets simultaneously."
     )
     kb = _kb(
         [("▶️  Next: Configure Settings", "tut:copy:3")],
@@ -840,7 +840,7 @@ async def tut_copy_3(callback: CallbackQuery) -> None:
         "│  COOLDOWN       30s              │\n"
         "│  MAX / HOUR     30 trades        │\n"
         "└──────────────────────────────────┘</code>\n\n"
-        "⚡ <b>Percentage Mode</b> (Supreme only):\n"
+        "⚡ <b>Percentage Mode</b>:\n"
         "  Copies the exact % of the leader's position size.\n"
         "  If they buy 10 SOL, you buy 10% = 1 SOL."
     )

@@ -1,7 +1,7 @@
 """
 bot/handlers/sniper.py
 =======================
-Full Sniper Tool handler — Free vs SUPREME tiers.
+Full Sniper Tool handler.
 
 Sections:
   A.  Main menu
@@ -16,7 +16,6 @@ Sections:
   J.  Auto-Buy (settings + toggles + field edit FSM)
   K.  Wallet (view + add/change FSM)
   L.  Positions (list + close)
-  M.  SUPREME Access page
   N.  FSM cancel + admin sniper commands
 """
 
@@ -27,7 +26,7 @@ from aiogram import Router, F
 from aiogram.exceptions import TelegramBadRequest
 from aiogram.filters import Command, StateFilter
 from aiogram.fsm.context import FSMContext
-from aiogram.types import CallbackQuery, Message
+from aiogram.types import CallbackQuery, Message, InlineKeyboardButton
 
 from bot.keyboards.sniper_menu import (
     build_sniper_menu,
@@ -47,12 +46,6 @@ from bot.keyboards.sniper_menu import (
     build_liq_sniper_menu,
     build_cancel_sniper,
 )
-from services.brainrot_token_gate import (
-    get_entitlements,
-    grant_supreme,
-    grant_supreme_black,
-    revoke_supreme,
-)
 from services.sniper_service import (
     is_valid_solana_address,
     analyze_token_for_user,
@@ -66,7 +59,7 @@ from services.sniper_presets_service import (
     get_presets, get_preset, count_presets,
     create_preset_from_settings, delete_preset,
     get_presets_with_pnl, get_preset_pnl,
-    SUPREME_TEMPLATES,
+    BUILTIN_TEMPLATES,
 )
 from services.sniper_watch_service import (
     get_watch_targets, count_watch_targets,
@@ -82,7 +75,6 @@ from utils.share_utils import bot_link as _bot_link, website_buttons as _website
 from services.auto_buy_service import (
     get_auto_buy_settings, update_auto_buy_field,
     toggle_auto_buy, toggle_kill_switch,
-    validate_auto_buy_settings,
 )
 from services.wallet_service import get_wallet, set_wallet, get_sol_balance
 from services.positions_service import get_positions, close_position, get_recent_transactions
@@ -106,42 +98,20 @@ def _short(address: str) -> str:
     return address[:6] + "..." + address[-4:] if len(address) > 10 else address
 
 
-def _tier_badge(tier: str) -> str:
-    if tier == "supreme_black":
-        return "🔱 SUPREME BLACK"
-    if tier == "supreme":
-        return "👑 SUPREME"
-    return "🆓 Free"
-
-
-def _is_supreme(tier: str) -> bool:
-    """True for both supreme and supreme_black tiers."""
-    return tier in ("supreme", "supreme_black")
-
-
-async def _get_ents(user_id: int):
-    return await get_entitlements(user_id)
-
-
 def _fmt_analysis(result: dict) -> str:
-    from services.sniper_score_service import BRAINROT_MINT
     t     = result["token"]
     score = result["score"]
-    tier  = result["tier"]
     risks = result.get("risk_notes", [])
     prem  = result.get("premium_notes")
-    eco   = result.get("ecosystem_notes")      # set only for BRAINROT override
 
     age   = t.get("age_minutes")
     age_s = f"{age}m" if age is not None else "?"
 
     risk_block = ("\n\n⚠️ <b>Risk Notes:</b>\n" + "\n".join(f"• {r}" for r in risks)) if risks else ""
 
-    # Ecosystem block shown for BRAINROT token (replaces generic SUPREME block)
-    if eco:
-        extra_block = f"\n\n{eco}"
-    elif prem:
-        extra_block = f"\n\n🔬 <b>SUPREME Analysis:</b>\n{prem}"
+    # Extra analysis notes, when the scorer produced any
+    if prem:
+        extra_block = f"\n\n🔬 <b>Analysis:</b>\n{prem}"
     else:
         extra_block = ""
 
@@ -161,11 +131,10 @@ def _fmt_analysis(result: dict) -> str:
         f"{result['rating']}\n\n"
         f"<i>{result.get('summary','')}</i>"
         f"{risk_block}{extra_block}\n\n"
-        f"<b>Tier:</b> {_tier_badge(tier)}"
     )
 
 
-def _fmt_settings(s: dict, tier: str) -> str:
+def _fmt_settings(s: dict) -> str:
     sm  = "✅" if s.get("strict_mode") else "⬜"
     af  = "✅" if s.get("auto_filter_enabled") else "⬜"
     fl  = "✅" if s.get("prioritize_fresh_launches") else "⬜"
@@ -176,7 +145,7 @@ def _fmt_settings(s: dict, tier: str) -> str:
     plat = plat_labels.get(s.get("preferred_platform", "auto"), "🔄 Auto")
 
     base = (
-        f"⚙️ <b>Sniper Settings</b>  [{_tier_badge(tier)}]\n"
+        f"⚙️ <b>Sniper Settings</b>\n"
         f"━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n\n"
         f"🔀 Platform:         {plat}\n"
         f"💧 Min Liquidity:    ${s.get('min_liquidity',0):,.0f}\n"
@@ -188,12 +157,10 @@ def _fmt_settings(s: dict, tier: str) -> str:
         f"📐 Slippage:         {s.get('default_slippage',0)}%\n"
         f"{sm} Strict Mode\n"
     )
-    if _is_supreme(tier):
-        base += (
-            f"\n👑 <b>SUPREME Settings</b>\n"
-            f"{af} Auto Filter    {fl} Fresh Priority\n"
-            f"{ls} Liq Strength   {ia} Instant Alert\n"
-        )
+    base += (
+        f"\n{af} Auto Filter    {fl} Fresh Priority\n"
+        f"{ls} Liq Strength   {ia} Instant Alert\n"
+    )
     return base
 
 
@@ -229,7 +196,6 @@ async def cb_sniper_main(callback: CallbackQuery) -> None:
     except TelegramBadRequest:
         pass
 
-    ents = await _get_ents(user_id)
 
     # ── Pull dashboard stats ───────────────────────────────────────────────────
     try:
@@ -293,24 +259,10 @@ async def cb_sniper_main(callback: CallbackQuery) -> None:
     except Exception:
         bal_bar = "░" * 10
 
-    # ── Tier display ──────────────────────────────────────────────────────────
-    tier = ents.tier
-    if tier == "supreme_black":
-        tier_label = "🔱 SUPREME BLACK"
-        tier_bar   = "▓▓▓▓▓▓▓▓▓▓ CLEARANCE: MAX"
-        status_line = "All systems armed. No restrictions. ⚡"
-    elif tier == "supreme":
-        tier_label = "👑 SUPREME"
-        tier_bar   = "▓▓▓▓▓▓▓░░░ CLEARANCE: HIGH"
-        status_line = "SUPREME active — most features unlocked."
-    else:
-        tier_label = "🆓 FREE"
-        tier_bar   = "▓░░░░░░░░░ CLEARANCE: BASIC"
-        status_line = "Upgrade via 👑 SUPREME ACCESS below."
+    status_line = "All systems armed."
 
     text = (
         f"🎯 <b>BRAINROT SNIPER</b>\n"
-        f"<code>{tier_bar}  {tier_label}</code>\n\n"
         f"<code>💳 {bal_bar}  {bal_str}</code>\n"
         f"<code>🎯 {total_buys} bought  📂 {open_positions} open  💸 {total_sells} sells</code>\n"
         f"<code>{pnl_icon} P&L est  {pnl_sign}{pnl_sol:.4f} SOL</code>\n\n"
@@ -320,7 +272,7 @@ async def cb_sniper_main(callback: CallbackQuery) -> None:
     try:
         await callback.message.edit_text(
             text,
-            reply_markup=build_sniper_menu(is_black=ents.has_supreme_black),
+            reply_markup=build_sniper_menu(),
             parse_mode="HTML",
         )
     except TelegramBadRequest:
@@ -377,11 +329,10 @@ async def fsm_analyze_address(message: Message, state: FSMContext) -> None:
 @router.callback_query(F.data == "sniper:settings")
 async def cb_settings(callback: CallbackQuery) -> None:
     user_id = callback.from_user.id
-    ents    = await _get_ents(user_id)
     s       = await get_settings(user_id)
     await callback.message.edit_text(
-        text=_fmt_settings(s, ents.tier),
-        reply_markup=build_settings_menu(s, _is_supreme(ents.tier)),
+        text=_fmt_settings(s),
+        reply_markup=build_settings_menu(s),
     )
     await callback.answer()
 
@@ -420,9 +371,8 @@ async def cb_set_platform(callback: CallbackQuery) -> None:
         return
     await update_setting(user_id, "preferred_platform", platform)
     labels = {"auto": "🔄 Auto (smart routing)", "jupiter": "🪐 Jupiter only", "pumpfun": "🔥 PumpFun only"}
-    ents  = await _get_ents(user_id)
     s_new = await get_settings(user_id)
-    await callback.message.edit_reply_markup(reply_markup=build_settings_menu(s_new, _is_supreme(ents.tier)))
+    await callback.message.edit_reply_markup(reply_markup=build_settings_menu(s_new))
     await callback.answer(f"Platform set to {labels[platform]}")
 
 
@@ -430,24 +380,19 @@ async def cb_set_platform(callback: CallbackQuery) -> None:
 async def cb_toggle_setting(callback: CallbackQuery) -> None:
     user_id = callback.from_user.id
     field   = callback.data.split("sniper:toggle:")[-1]
-    ents    = await _get_ents(user_id)
 
-    supreme_only = {
+    advanced_fields = {
         "auto_filter_enabled", "prioritize_fresh_launches",
         "prioritize_liquidity_strength", "auto_hide_weak_metadata",
         "auto_hide_low_momentum", "instant_alert_on_match", "premium_ranking_boost",
     }
-    if field in supreme_only and not _is_supreme(ents.tier):
-        await callback.answer("👑 SUPREME feature — upgrade via $BRAINROT.", show_alert=True)
-        return
-
     s = await get_settings(user_id)
     new_val = 0 if s.get(field) else 1
     await update_setting(user_id, field, new_val)
 
     s_new = await get_settings(user_id)
     await callback.message.edit_reply_markup(
-        reply_markup=build_settings_menu(s_new, _is_supreme(ents.tier))
+        reply_markup=build_settings_menu(s_new)
     )
     await callback.answer(f"{'On' if new_val else 'Off'}")
 
@@ -459,19 +404,14 @@ async def cb_toggle_setting(callback: CallbackQuery) -> None:
 @router.callback_query(F.data == "sniper:presets")
 async def cb_presets(callback: CallbackQuery) -> None:
     user_id    = callback.from_user.id
-    ents       = await _get_ents(user_id)
     presets    = await get_presets_with_pnl(user_id)   # sorted by P&L desc
 
-    # Inject SUPREME templates at the bottom (unranked — no trade history)
+    # Built-in starter templates at the bottom (unranked — no trade history)
     display = presets[:]
-    if _is_supreme(ents.tier):
-        for t in SUPREME_TEMPLATES:
-            display.append({"id": f"tpl_{t['name']}", "name": t['name'], "total_pnl": None})
+    for t in BUILTIN_TEMPLATES:
+        display.append({"id": f"tpl_{t['name']}", "name": t['name'], "total_pnl": None})
 
     slots_used = len(presets)
-    slots_max  = ents.presets_limit
-    bar_filled = int((slots_used / max(slots_max, 1)) * 10)
-    bar        = "█" * bar_filled + "░" * (10 - bar_filled)
 
     # Build ranking rows
     rank_lines = ""
@@ -493,16 +433,14 @@ async def cb_presets(callback: CallbackQuery) -> None:
         text=(
             f"<code>╔══════════════════════════════╗\n"
             f"║  ⬛  CONFIG VAULT  //  PRESETS ║\n"
-            f"║  {_tier_badge(ents.tier):<28}║\n"
             f"╚══════════════════════════════╝</code>\n\n"
-            f"<code>SLOTS  [{bar}]  {slots_used} / {slots_max}\n"
             f"━━━━━━━━━━━━━━━━━━━━━━━━━━━━</code>\n\n"
             f"<b>// PERFORMANCE RANKING</b>\n"
             f"{rank_lines}\n"
             f"<code>━━━━━━━━━━━━━━━━━━━━━━━━━━━━</code>\n"
             f"<i>Tap a preset to load, edit, or share it.</i>"
         ),
-        reply_markup=build_presets_list(display, _is_supreme(ents.tier)),
+        reply_markup=build_presets_list(display),
     )
     await callback.answer()
 
@@ -583,13 +521,13 @@ async def cb_preset_view(callback: CallbackQuery) -> None:
     raw     = callback.data.split("sniper:preset_view:")[-1]
     user_id = callback.from_user.id
 
-    # SUPREME template (no P&L — not user-created)
+    # Built-in template (no P&L — not user-created)
     if raw.startswith("tpl_"):
         name = raw[4:]
-        tpl  = next((t for t in SUPREME_TEMPLATES if t["name"] == name), None)
+        tpl  = next((t for t in BUILTIN_TEMPLATES if t["name"] == name), None)
         if tpl:
             await callback.message.edit_text(
-                text=_fmt_sniper_preset(tpl, tag="SUPREME TEMPLATE"),
+                text=_fmt_sniper_preset(tpl, tag="BUILT-IN TEMPLATE"),
                 reply_markup=build_preset_actions(raw, is_template=True),
             )
         await callback.answer()
@@ -615,7 +553,7 @@ async def cb_preset_apply(callback: CallbackQuery) -> None:
 
     if raw.startswith("tpl_"):
         name   = raw[4:]
-        preset = next((t for t in SUPREME_TEMPLATES if t["name"] == name), None)
+        preset = next((t for t in BUILTIN_TEMPLATES if t["name"] == name), None)
     else:
         preset = await get_preset(int(raw), user_id)
 
@@ -653,7 +591,7 @@ async def cb_preset_delete(callback: CallbackQuery) -> None:
     raw     = callback.data.split("sniper:preset_del:")[-1]
     user_id = callback.from_user.id
     if raw.startswith("tpl_"):
-        await callback.answer("SUPREME templates cannot be deleted.", show_alert=True)
+        await callback.answer("Built-in templates cannot be deleted.", show_alert=True)
         return
     success = await delete_preset(int(raw), user_id)
     if success:
@@ -805,15 +743,8 @@ async def cb_preset_share(callback: CallbackQuery) -> None:
 @router.callback_query(F.data == "sniper:preset_create")
 async def cb_preset_create_start(callback: CallbackQuery, state: FSMContext) -> None:
     user_id = callback.from_user.id
-    ents    = await _get_ents(user_id)
     count   = await count_presets(user_id)
 
-    if count >= ents.presets_limit:
-        await callback.answer(
-            f"Preset limit reached ({ents.presets_limit}). Delete one or upgrade to SUPREME.",
-            show_alert=True,
-        )
-        return
 
     await state.set_state(CreatePresetState.waiting_name)
     await callback.message.answer(
@@ -896,10 +827,8 @@ async def fsm_preset_name(message: Message, state: FSMContext) -> None:
 async def cb_watch(callback: CallbackQuery) -> None:
     import asyncio
     user_id = callback.from_user.id
-    ents    = await _get_ents(user_id)
     targets = await get_watch_targets(user_id)
     count   = len(targets)
-    limit   = ents.watch_targets_limit
 
     # Boot animation
     msg = await callback.message.edit_text(
@@ -920,7 +849,7 @@ async def cb_watch(callback: CallbackQuery) -> None:
         "║   👁 <b>WATCH TARGETS</b>           ║\n"
         "╚══════════════════════════════╝\n\n"
         f"<code>┌─ STATUS ─────────────────────────┐\n"
-        f"│  WATCHING   {count:<3} / {limit:<3} tokens        │\n"
+        f"│  WATCHING   {count:<3} tokens              │\n"
         f"│  ALERTS ON  {active_alerts:<3} tokens             │\n"
         f"└──────────────────────────────────┘</code>\n\n"
         "<code>▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓</code>\n"
@@ -932,7 +861,7 @@ async def cb_watch(callback: CallbackQuery) -> None:
 
     await msg.edit_text(
         text,
-        reply_markup=build_watch_targets_main(targets, limit),
+        reply_markup=build_watch_targets_main(targets),
         parse_mode="HTML",
     )
     await callback.answer()
@@ -1116,15 +1045,8 @@ async def fsm_wt_buy(message: Message, state: FSMContext) -> None:
 @router.callback_query(F.data == "sniper:watch_add_manual")
 async def cb_watch_add_start(callback: CallbackQuery, state: FSMContext) -> None:
     user_id = callback.from_user.id
-    ents    = await _get_ents(user_id)
     count   = await count_watch_targets(user_id)
 
-    if count >= ents.watch_targets_limit:
-        await callback.answer(
-            f"Watch limit reached ({ents.watch_targets_limit}). Remove one or upgrade to SUPREME.",
-            show_alert=True,
-        )
-        return
 
     await state.set_state(AddWatchTargetState.waiting_address)
     await callback.message.answer(
@@ -1143,11 +1065,7 @@ async def cb_watch_add_cached(callback: CallbackQuery) -> None:
         await callback.answer("Token reference expired. Re-analyze to add.", show_alert=True)
         return
     user_id = callback.from_user.id
-    ents    = await _get_ents(user_id)
     count   = await count_watch_targets(user_id)
-    if count >= ents.watch_targets_limit:
-        await callback.answer(f"Watch limit reached ({ents.watch_targets_limit}).", show_alert=True)
-        return
     ok, msg = await add_watch_target(user_id, address)
     await callback.answer(msg, show_alert=not ok)
 
@@ -1169,10 +1087,9 @@ async def cb_watch_remove(callback: CallbackQuery) -> None:
     ok     = await remove_watch_target(row_id, callback.from_user.id)
     if ok:
         targets = await get_watch_targets(callback.from_user.id)
-        ents    = await _get_ents(callback.from_user.id)
         await callback.message.edit_text(
-            f"👁 <b>Watch Targets</b>  [{_tier_badge(ents.tier)}]\n"
-            f"Saved: {len(targets)} / {ents.watch_targets_limit}",
+            f"👁 <b>Watch Targets</b>\n"
+            f"Saved: {len(targets)}",
             reply_markup=build_watch_list(targets),
         )
     await callback.answer("Removed." if ok else "Not found.")
@@ -1185,13 +1102,12 @@ async def cb_watch_remove(callback: CallbackQuery) -> None:
 @router.callback_query(F.data == "sniper:blacklist")
 async def cb_blacklist(callback: CallbackQuery) -> None:
     user_id = callback.from_user.id
-    ents    = await _get_ents(user_id)
     entries = await get_blacklist(user_id)
     await callback.message.edit_text(
         text=(
-            f"🚫 <b>Blacklist</b>  [{_tier_badge(ents.tier)}]\n"
+            f"🚫 <b>Blacklist</b>\n"
             f"━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n\n"
-            f"Blacklisted: {len(entries)} / {ents.blacklist_limit}\n\n"
+            f"Blacklisted: {len(entries)}\n\n"
             f"<i>Tap a token to remove it. These tokens are hidden from your feed.</i>"
         ),
         reply_markup=build_blacklist_menu(entries),
@@ -1202,11 +1118,7 @@ async def cb_blacklist(callback: CallbackQuery) -> None:
 @router.callback_query(F.data == "sniper:bl_add_manual")
 async def cb_bl_add_start(callback: CallbackQuery, state: FSMContext) -> None:
     user_id = callback.from_user.id
-    ents    = await _get_ents(user_id)
     count   = await count_blacklist(user_id)
-    if count >= ents.blacklist_limit:
-        await callback.answer(f"Blacklist limit ({ents.blacklist_limit}) reached.", show_alert=True)
-        return
     await state.set_state(AddBlacklistState.waiting_address)
     await callback.message.answer("🚫 Enter token address to blacklist:", reply_markup=build_cancel_sniper())
     await callback.answer()
@@ -1220,11 +1132,7 @@ async def cb_bl_add_cached(callback: CallbackQuery) -> None:
         await callback.answer("Reference expired.", show_alert=True)
         return
     user_id = callback.from_user.id
-    ents    = await _get_ents(user_id)
     count   = await count_blacklist(user_id)
-    if count >= ents.blacklist_limit:
-        await callback.answer(f"Blacklist limit ({ents.blacklist_limit}) reached.", show_alert=True)
-        return
     ok, msg = await add_to_blacklist(user_id, address)
     await callback.answer(msg, show_alert=not ok)
 
@@ -1403,7 +1311,6 @@ async def fsm_preview_address(message: Message, state: FSMContext) -> None:
 
 
 async def _show_trade_preview(user_id: int, address: str, msg_or_cb) -> None:
-    ents     = await _get_ents(user_id)
     settings = await get_settings(user_id)
     result   = await analyze_token_for_user(user_id, address)
 
@@ -1415,7 +1322,7 @@ async def _show_trade_preview(user_id: int, address: str, msg_or_cb) -> None:
         risks  = result.get("risk_notes", [])
         risk_s = "\n".join(f"⚠️ {r}" for r in risks) if risks else "None"
         text   = (
-            f"📋 <b>Trade Preview</b>  [{_tier_badge(ents.tier)}]\n"
+            f"📋 <b>Trade Preview</b>\n"
             f"━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n\n"
             f"<b>Token:</b> {t.get('symbol','?')} — {t.get('name','?')}\n"
             f"<code>{address}</code>\n\n"
@@ -1425,7 +1332,6 @@ async def _show_trade_preview(user_id: int, address: str, msg_or_cb) -> None:
             f"<b>Volume 1h:</b> ${t.get('volume_h1',0):,.0f}\n"
             f"<b>Score:</b>    {score}/100 — {result['rating']}\n\n"
             f"<b>Risk Notes:</b>\n{risk_s}\n\n"
-            f"{'⚡ SUPREME — instant preview active.' if _is_supreme(ents.tier) else ''}\n"
             f"<i>⚠️ This is a preview only. No transaction has been sent.</i>"
         )
 
@@ -1458,7 +1364,6 @@ async def cb_buy_confirm(callback: CallbackQuery) -> None:
         await callback.answer("Reference expired. Re-analyze the token.", show_alert=True)
         return
 
-    ents     = await _get_ents(user_id)
     s        = await get_settings(user_id)
     buy_size = float(s.get("default_buy_size") or 0.05)
     slippage = float(s.get("default_slippage") or 15.0)
@@ -1524,7 +1429,6 @@ async def cb_buy_confirm(callback: CallbackQuery) -> None:
 @router.callback_query(F.data == "sniper:feed")
 async def cb_live_feed(callback: CallbackQuery) -> None:
     user_id = callback.from_user.id
-    ents    = await _get_ents(user_id)
 
     wait_msg = await callback.message.answer("📡 Fetching live launches...")
 
@@ -1541,9 +1445,9 @@ async def cb_live_feed(callback: CallbackQuery) -> None:
         return
 
     header = (
-        f"📡 <b>Live Launch Feed</b>  [{_tier_badge(ents.tier)}]\n"
+        f"📡 <b>Live Launch Feed</b>\n"
         f"━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n"
-        f"Showing {len(candidates)} ranked candidates (limit: {ents.feed_result_limit})\n"
+        f"Showing {len(candidates)} ranked candidates \n"
     )
     await wait_msg.edit_text(header + "\n<i>Use buttons below each card to act.</i>")
 
@@ -1617,7 +1521,6 @@ async def cb_feed_blacklist(callback: CallbackQuery) -> None:
 @router.callback_query(F.data == "sniper:alerts")
 async def cb_alerts(callback: CallbackQuery) -> None:
     user_id   = callback.from_user.id
-    ents      = await _get_ents(user_id)
     alert_cfg = await get_alert_settings(user_id)
     enabled   = bool(alert_cfg.get("enabled"))
 
@@ -1628,20 +1531,19 @@ async def cb_alerts(callback: CallbackQuery) -> None:
     b.row(InlineKeyboardButton(text=toggle_label, callback_data="sniper:alert_toggle"))
     b.row(InlineKeyboardButton(text="⬅️  Back", callback_data="sniper:main"))
 
-    basic_check  = "✅" if ents.has_basic_alerts else "❌"
-    smart_check  = "✅" if ents.has_smart_alerts else "🔒 SUPREME"
-    adv_check    = "✅" if ents.has_advanced_filtering else "🔒 SUPREME"
+    basic_check  = "✅"
+    smart_check  = "✅"
+    adv_check    = "✅"
 
     await callback.message.edit_text(
         text=(
-            f"🔔 <b>Smart Alerts</b>  [{_tier_badge(ents.tier)}]\n"
+            f"🔔 <b>Smart Alerts</b>\n"
             f"━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n\n"
             f"Status: {'🟢 Enabled' if enabled else '🔴 Disabled'}\n\n"
             f"{basic_check} Basic Alerts\n"
             f"{smart_check} Settings-Match Alerts\n"
             f"{adv_check}  Watch Target Alerts\n"
             f"{smart_check} Ranked Candidate Alerts\n\n"
-            f"<i>{'SUPREME active — all alert types available.' if _is_supreme(ents.tier) else 'SUPREME unlocks smart alerts based on your settings.'}</i>"
         ),
         reply_markup=b.as_markup(),
     )
@@ -1679,7 +1581,6 @@ async def cb_autobuy(callback: CallbackQuery) -> None:
             pass
         await asyncio.sleep(0.38)
 
-    ents = await _get_ents(user_id)
     s    = await get_auto_buy_settings(user_id)
 
     # Wallet + balance
@@ -1702,7 +1603,6 @@ async def cb_autobuy(callback: CallbackQuery) -> None:
     enabled   = bool(s.get("enabled"))
     kill      = bool(s.get("kill_switch"))
     power_s   = "ONLINE  ✅" if (enabled and not kill) else ("KILL SW ⛔" if kill else "OFFLINE ❌")
-    tier_s    = _tier_badge(ents.tier).upper()
 
     # Settings
     threshold  = int(s.get("score_threshold") or 30)
@@ -1716,8 +1616,8 @@ async def cb_autobuy(callback: CallbackQuery) -> None:
     min_mcap      = float(s.get("min_market_cap_usd") or 0.0)
     max_mcap      = float(s.get("max_market_cap_usd") or 0.0)
 
-    cap_size   = "∞" if ents.has_supreme_black else f"{ents.max_buy_size_limit_sol}"
-    cap_hour   = "∞" if ents.has_supreme_black else f"{ents.max_buys_per_hour_limit}"
+    cap_size   = "∞"
+    cap_hour   = "∞"
 
     thresh_warn = "  ⚠️ VERY LOW — raise to 20+" if threshold < 5 else (
                   "  ⚠️ LOW" if threshold < 15 else "")
@@ -1727,7 +1627,6 @@ async def cb_autobuy(callback: CallbackQuery) -> None:
         f"╔══════════════════════════════╗\n"
         f"║  🤖 AUTO-BUY ENGINE          ║\n"
         f"╚══════════════════════════════╝\n"
-        f"TIER     {tier_s}\n"
         f"POWER    {power_s}\n"
         f"WALLET   {w_short_s}\n"
         f"BALANCE  {bal_bar} {bal_s}{bal_warn}\n"
@@ -1758,7 +1657,7 @@ async def cb_autobuy(callback: CallbackQuery) -> None:
         f"</code>"
     )
 
-    kb = build_autobuy_menu(s, _is_supreme(ents.tier))
+    kb = build_autobuy_menu(s)
     try:
         await callback.message.edit_text(text, reply_markup=kb, parse_mode="HTML")
     except TelegramBadRequest:
@@ -1950,7 +1849,6 @@ async def cb_ab_preset(callback: CallbackQuery) -> None:
         return
 
     user_id = callback.from_user.id
-    ents    = await _get_ents(user_id)
 
     # Apply sniper_settings fields
     sniper_fields = set(SNIPER_DEFAULTS.keys())
@@ -1964,11 +1862,10 @@ async def cb_ab_preset(callback: CallbackQuery) -> None:
     for field in ab_fields:
         if field in preset:
             val = preset[field]
-            # Respect tier caps
             if field == "max_buy_size_sol":
-                val = min(float(val), ents.max_buy_size_limit_sol)
+                val = float(val)
             if field == "max_buys_per_hour":
-                val = min(int(val), ents.max_buys_per_hour_limit)
+                val = int(val)
             await update_auto_buy_field(user_id, field, val)
 
     # Pause auto-buy and clear the seen buffer so the worker starts fresh
@@ -2075,25 +1972,11 @@ async def fsm_edit_setting_or_ab(message: Message, state: FSMContext) -> None:
     # ── Auto-buy field (prefixed with __ab__) ─────────────────────────────────
     if field.startswith("__ab__"):
         real_field = field[6:]
-        ents       = await _get_ents(message.from_user.id)
         ab_int_fields = {"max_buys_per_hour", "cooldown_seconds"}
         try:
             value = int(raw) if real_field in ab_int_fields else float(raw)
         except ValueError:
             await message.answer("❌ Invalid number.", reply_markup=build_cancel_sniper())
-            return
-        if real_field == "max_buy_size_sol" and value > ents.max_buy_size_limit_sol:
-            upgrade_hint = "" if ents.has_supreme_black else " Upgrade to SUPREME."
-            await message.answer(
-                f"❌ Your tier limit is {ents.max_buy_size_limit_sol} SOL.{upgrade_hint}",
-                reply_markup=build_cancel_sniper(),
-            )
-            return
-        if real_field == "max_buys_per_hour" and value > ents.max_buys_per_hour_limit:
-            await message.answer(
-                f"❌ Your tier limit is {ents.max_buys_per_hour_limit}/hour.",
-                reply_markup=build_cancel_sniper(),
-            )
             return
         await state.clear()
         await update_auto_buy_field(message.from_user.id, real_field, value)
@@ -2140,15 +2023,6 @@ async def fsm_edit_setting_or_ab(message: Message, state: FSMContext) -> None:
         await message.answer(f"❌ {error}", reply_markup=build_cancel_sniper())
         return
 
-    if field == "default_buy_size":
-        ents = await _get_ents(message.from_user.id)
-        if not ents.has_supreme_black and value > ents.max_buy_size_limit_sol:
-            await message.answer(
-                f"❌ Your tier limit is {ents.max_buy_size_limit_sol} SOL per buy.",
-                reply_markup=build_cancel_sniper(),
-            )
-            return
-
     await state.clear()
     await update_setting(message.from_user.id, field, value)
     await message.answer(
@@ -2158,17 +2032,13 @@ async def fsm_edit_setting_or_ab(message: Message, state: FSMContext) -> None:
 
 
 # ══════════════════════════════════════════════════════════════════════════════
-# J2. LIQUIDITY SNIPER (Supreme Black)
+# J2. LIQUIDITY SNIPER
 # ══════════════════════════════════════════════════════════════════════════════
 
 @router.callback_query(F.data == "sniper:liq_sniper")
 async def cb_liq_sniper(callback: CallbackQuery) -> None:
     from services.auto_buy_service import get_auto_buy_settings
     from services.auto_exit_service import get_preset
-    ents = await _get_ents(callback.from_user.id)
-    if not ents.has_supreme_black:
-        await callback.answer("⬛️ Supreme Black required.", show_alert=True)
-        return
     ab_s = await get_auto_buy_settings(callback.from_user.id)
     min_buy  = float(ab_s.get("min_initial_buy_sol") or 0)
     active   = bool(ab_s.get("enabled")) and min_buy > 0
@@ -2184,7 +2054,7 @@ async def cb_liq_sniper(callback: CallbackQuery) -> None:
 
     status_line = "🟢 ACTIVE" if active and not ks else ("🔴 KILL SWITCH" if ks else "🔴 OFF")
     text = (
-        f"⬛️ <b>Liquidity Sniper</b>  [SUPREME BLACK]\n"
+        f"⬛️ <b>Liquidity Sniper</b>\n"
         f"━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n\n"
         f"<b>Status:</b>         {status_line}\n"
         f"<b>Min Initial Buy:</b> {min_buy} SOL\n"
@@ -2213,10 +2083,6 @@ async def cb_liq_sniper(callback: CallbackQuery) -> None:
 @router.callback_query(F.data == "sniper:liq_power")
 async def cb_liq_power(callback: CallbackQuery) -> None:
     from services.auto_buy_service import get_auto_buy_settings, toggle_auto_buy
-    ents = await _get_ents(callback.from_user.id)
-    if not ents.has_supreme_black:
-        await callback.answer("⬛️ Supreme Black required.", show_alert=True)
-        return
     ab_s = await get_auto_buy_settings(callback.from_user.id)
     min_buy = float(ab_s.get("min_initial_buy_sol") or 0)
     if min_buy <= 0 and not ab_s.get("enabled"):
@@ -2241,11 +2107,6 @@ async def cb_liq_activate(callback: CallbackQuery) -> None:
     """Apply the recommended Liquidity Sniper preset and pause for user to review."""
     from utils.trade_presets import TRADE_PRESETS
     from services.sniper_settings_service import DEFAULTS as SNIPER_DEFAULTS
-    ents = await _get_ents(callback.from_user.id)
-    if not ents.has_supreme_black:
-        await callback.answer("⬛️ Supreme Black required.", show_alert=True)
-        return
-
     preset  = TRADE_PRESETS["liq_sniper"]
     user_id = callback.from_user.id
 
@@ -2281,10 +2142,6 @@ async def cb_liq_exit_preset(callback: CallbackQuery) -> None:
     """Let user pick which exit preset the Liquidity Sniper will auto-apply."""
     from services.auto_exit_service import get_system_presets, get_user_presets, get_auto_exit_settings
     from services.auto_buy_service import get_auto_buy_settings, update_auto_buy_field
-    ents = await _get_ents(callback.from_user.id)
-    if not ents.has_supreme_black:
-        await callback.answer("⬛️ Supreme Black required.", show_alert=True)
-        return
     import asyncio
     from aiogram.types import InlineKeyboardButton
     from aiogram.utils.keyboard import InlineKeyboardBuilder
@@ -2320,10 +2177,6 @@ async def cb_liq_exit_preset(callback: CallbackQuery) -> None:
 async def cb_liq_set_exit(callback: CallbackQuery) -> None:
     from services.auto_buy_service import update_auto_buy_field
     from services.auto_exit_service import get_preset
-    ents = await _get_ents(callback.from_user.id)
-    if not ents.has_supreme_black:
-        await callback.answer("⬛️ Supreme Black required.", show_alert=True)
-        return
     preset_id = int(callback.data.split("sniper:liq_set_exit:")[-1])
     await update_auto_buy_field(callback.from_user.id, "liq_exit_preset_id", preset_id)
     # Reset power — settings changed
@@ -2339,10 +2192,6 @@ async def cb_liq_set_exit(callback: CallbackQuery) -> None:
 @router.callback_query(F.data == "sniper:liq_holdings")
 async def cb_liq_holdings(callback: CallbackQuery) -> None:
     from services.auto_buy_service import get_liq_sniper_jobs
-    ents = await _get_ents(callback.from_user.id)
-    if not ents.has_supreme_black:
-        await callback.answer("⬛️ Supreme Black required.", show_alert=True)
-        return
     jobs = await get_liq_sniper_jobs(callback.from_user.id, limit=25)
 
     from aiogram.types import InlineKeyboardButton
@@ -2955,7 +2804,7 @@ async def cb_positions(callback: CallbackQuery) -> None:
 async def cb_positions_closed(callback: CallbackQuery) -> None:
     """
     Trade History — paginated, instant DB-only read, no RPC calls.
-    Page size: 20 for free/supreme, 50 for supreme_black.
+    Page size: 50.
     Callback data: sniper:positions_closed  (page 0)
                    sniper:positions_closed:N  (page N)
     """
@@ -2970,9 +2819,7 @@ async def cb_positions_closed(callback: CallbackQuery) -> None:
     m = re.search(r":(\d+)$", callback.data)
     page = int(m.group(1)) if m else 0
 
-    # Page size by tier
-    ents      = await _get_ents(user_id)
-    page_size = 50 if ents.has_supreme_black else 20
+    page_size = 50
 
     # Boot animation only on the first page open (not on prev/next taps)
     if page == 0:
@@ -3028,7 +2875,6 @@ async def cb_positions_closed(callback: CallbackQuery) -> None:
 
     cards          = "\n".join(_fmt_entry(j) for j in jobs)
     page_deployed  = sum(float(j["total_spent"] or 0) for j in jobs)
-    tier_label     = "50/page ⬛ Black" if ents.has_supreme_black else "20/page  |  ⬛ Black = 50/page"
 
     text = (
         f"<code>╔══════════════════════════════╗\n"
@@ -3037,7 +2883,6 @@ async def cb_positions_closed(callback: CallbackQuery) -> None:
         f"PAGE     {page + 1} of {total_pages}  ({total} total)\n"
         f"SHOWING  {offset + 1}–{min(offset + page_size, total)}\n"
         f"DEPLOYED {page_deployed:.4f} SOL this page\n"
-        f"LIMIT    {tier_label}\n"
         f"──────────────────────────────</code>\n\n"
         + cards
     )
@@ -3056,12 +2901,6 @@ async def cb_positions_closed(callback: CallbackQuery) -> None:
         ))
     if nav:
         b.row(*nav)
-
-    if not ents.has_supreme_black:
-        b.row(InlineKeyboardButton(
-            text="⬛ Upgrade for 50/page",
-            callback_data="sniper:supreme",
-        ))
 
     b.row(InlineKeyboardButton(text="⬅️  Back to Positions", callback_data="sniper:positions"))
 
@@ -3226,48 +3065,6 @@ async def cb_pos_sell_all(callback: CallbackQuery) -> None:
 
 
 # ══════════════════════════════════════════════════════════════════════════════
-# M. SUPREME ACCESS PAGE
-# ══════════════════════════════════════════════════════════════════════════════
-
-@router.callback_query(F.data == "sniper:supreme")
-async def cb_supreme_page(callback: CallbackQuery) -> None:
-    # Redirect to the full burn-activation SUPREME page
-    # (handled by bot/handlers/supreme_access.py — registered before this router)
-    # This handler is a fallback in case the supreme router hasn't captured it.
-    from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton
-    from aiogram.utils.keyboard import InlineKeyboardBuilder
-
-    user_id = callback.from_user.id
-    ents    = await _get_ents(user_id)
-
-    tier_line = (
-        "👑 <b>SUPREME — ACTIVE</b>"
-        if _is_supreme(ents.tier)
-        else "🆓 <b>Free Tier</b>"
-    )
-
-    builder = InlineKeyboardBuilder()
-    builder.row(InlineKeyboardButton(text="👑 Open SUPREME Access", callback_data="supreme:main"))
-    builder.row(InlineKeyboardButton(text="⬅️ Back to Sniper",     callback_data="sniper:main"))
-
-    await callback.message.edit_text(
-        f"👑 <b>SUPREME Sniper Access</b>\n"
-        f"━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n\n"
-        f"  {tier_line}\n\n"
-        f"<b>SUPREME unlocks:</b>\n"
-        f"🔥 Advanced filtering & priority ranking\n"
-        f"🚀 Smart alerts\n"
-        f"🤖 Expanded auto-buy (up to {settings.SUPREME_MAX_BUY_SOL} SOL)\n"
-        f"📂 Up to {settings.SUPREME_PRESETS_LIMIT} presets\n"
-        f"👁 Up to {settings.SUPREME_WATCH_LIMIT} watch targets\n\n"
-        f"<b>Activate by burning $BRAINROT — no admin needed.</b>\n"
-        f"Tap below to open the full SUPREME activation page.",
-        reply_markup=builder.as_markup(),
-    )
-    await callback.answer()
-
-
-# ══════════════════════════════════════════════════════════════════════════════
 # N. CANCEL + ADMIN COMMANDS
 # ══════════════════════════════════════════════════════════════════════════════
 
@@ -3315,88 +3112,7 @@ async def cmd_resume_trading(message: Message) -> None:
     )
 
 
-@router.message(Command("grant_supreme_sniper"))
-async def cmd_grant_supreme(message: Message) -> None:
-    if not is_admin(message.from_user.id):
-        return
-    parts = message.text.strip().split()
-    if len(parts) < 2 or not parts[1].isdigit():
-        await message.answer("Usage: /grant_supreme_sniper <user_id>")
-        return
-    uid = int(parts[1])
-    wallet = parts[2] if len(parts) > 2 else ""
-    await grant_supreme(uid, wallet)
-    await message.answer(f"👑 SUPREME sniper access granted to user {uid}.")
-
-
-@router.message(Command("revoke_supreme_sniper"))
-async def cmd_revoke_supreme(message: Message) -> None:
-    if not is_admin(message.from_user.id):
-        return
-    parts = message.text.strip().split()
-    if len(parts) < 2 or not parts[1].isdigit():
-        await message.answer("Usage: /revoke_supreme_sniper <user_id>")
-        return
-    uid = int(parts[1])
-    await revoke_supreme(uid)
-    await message.answer(f"SUPREME sniper access revoked from user {uid}.")
-
-
-@router.message(Command("grant_black"))
-async def cmd_grant_black(message: Message) -> None:
-    """Admin: manually grant Supreme Black to a user."""
-    if not is_admin(message.from_user.id):
-        return
-    parts = message.text.strip().split()
-    if len(parts) < 2 or not parts[1].isdigit():
-        await message.answer("Usage: /grant_black <user_id>")
-        return
-    uid = int(parts[1])
-    await grant_supreme_black(uid)
-    await message.answer(f"🖤 SUPREME BLACK granted to user {uid}.")
-
-
-@router.message(Command("reevaluate_tiers"))
-async def cmd_reevaluate_tiers(message: Message) -> None:
-    """
-    Admin: retroactively upgrade any user whose cumulative burn total meets
-    the Supreme Black threshold. Useful after changing the threshold or for
-    users who burned before the Black tier existed.
-    """
-    if not is_admin(message.from_user.id):
-        return
-    from utils.config import settings
-    from database.sqlite_db import get_db
-    threshold = settings.SUPREME_BLACK_REQUIRED_BURN_AMOUNT
-    upgraded  = []
-
-    async with get_db() as db:
-        async with db.execute(
-            "SELECT user_id, total_burned FROM user_burn_stats WHERE total_burned >= ?",
-            (threshold,)
-        ) as cur:
-            rows = await cur.fetchall()
-
-    for row in rows:
-        uid   = row["user_id"]
-        total = row["total_burned"]
-        await grant_supreme_black(uid)
-        upgraded.append(f"• {uid}  ({total:,.0f} burned)")
-
-    if upgraded:
-        await message.answer(
-            f"🖤 <b>Tier re-evaluation complete.</b>\n\n"
-            f"Upgraded {len(upgraded)} user(s) to SUPREME BLACK:\n" +
-            "\n".join(upgraded)
-        )
-    else:
-        await message.answer(
-            f"No users found with ≥ {threshold:,.0f} total burned tokens.\n"
-            f"Current threshold: SUPREME_BLACK_REQUIRED_BURN_AMOUNT = {threshold:,.0f}"
-        )
-
-
-# Import settings for the SUPREME page
+# settings is used by the pages above
 from utils.config import settings
 
 
@@ -3406,30 +3122,6 @@ from utils.config import settings
 # handler for truly unexpected messages.
 @router.message(F.text, ~F.text.startswith("/"), StateFilter(None))
 async def sniper_stray_message(message: Message) -> None:
-    from services.affiliate_service import get_pending_affiliate_signup
-    import re
-
-    user_id = message.from_user.id
-    text    = (message.text or "").strip()
-
-    # If user has an active affiliate signup pending and pasted a Solana wallet,
-    # route them back to the affiliate flow with a helpful nudge.
-    pending = await get_pending_affiliate_signup(user_id)
-    if pending and re.match(r'^[1-9A-HJ-NP-Za-km-z]{32,44}$', text):
-        from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton
-        from aiogram.utils.keyboard import InlineKeyboardBuilder
-        b = InlineKeyboardBuilder()
-        b.row(InlineKeyboardButton(text="⬛ Resume Signup", callback_data="af:signup:start"))
-        b.row(InlineKeyboardButton(text="⬅️ Alpha Network",  callback_data="af:main"))
-        await message.answer(
-            "⚠️ <b>Session restarted.</b>\n\n"
-            "You have an active Supreme Black signup in progress.\n"
-            "Tap <b>Resume Signup</b> to continue from where you left off.",
-            reply_markup=b.as_markup(),
-            parse_mode="HTML",
-        )
-        return
-
     await message.answer(
         "⚠️ Session expired or no input expected.\n"
         "Use the menu button to navigate the sniper tool.",

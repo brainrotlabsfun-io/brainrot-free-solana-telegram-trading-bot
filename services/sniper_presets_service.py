@@ -2,7 +2,6 @@
 services/sniper_presets_service.py
 ===================================
 CRUD for sniper presets.
-Limits enforced via entitlements (caller must check).
 """
 
 import json
@@ -26,10 +25,10 @@ _SAVE_KEYS = [
     "min_market_cap_usd", "max_market_cap_usd",
 ]
 
-# Built-in SUPREME preset templates
-SUPREME_TEMPLATES = [
+# Built-in starter preset templates
+BUILTIN_TEMPLATES = [
     {
-        "name": "SUPREME Momentum",
+        "name": "Momentum",
         "min_liquidity": 10000, "min_volume": 5000, "min_buys": 30,
         "max_token_age_minutes": 30, "max_risk_level": 2,
         "default_buy_size": 0.1, "default_slippage": 15.0, "strict_mode": 1,
@@ -39,7 +38,7 @@ SUPREME_TEMPLATES = [
         "premium_ranking_boost": 1, "strategy_mode": "none",
     },
     {
-        "name": "SUPREME Fresh Launch Hunter",
+        "name": "Fresh Launch Hunter",
         "min_liquidity": 1000, "min_volume": 500, "min_buys": 5,
         "max_token_age_minutes": 10, "max_risk_level": 4,
         "default_buy_size": 0.05, "default_slippage": 20.0, "strict_mode": 0,
@@ -49,7 +48,7 @@ SUPREME_TEMPLATES = [
         "premium_ranking_boost": 1, "strategy_mode": "none",
     },
     {
-        "name": "SUPREME Strict Filter",
+        "name": "Strict Filter",
         "min_liquidity": 25000, "min_volume": 10000, "min_buys": 80,
         "max_token_age_minutes": 60, "max_risk_level": 1,
         "default_buy_size": 0.2, "default_slippage": 10.0, "strict_mode": 1,

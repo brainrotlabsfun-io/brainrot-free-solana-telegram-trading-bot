@@ -5,7 +5,6 @@ All database operations for the user-generated Raid Hub.
 Handles: hub_raids, hub_participants, users tables.
 
 Point awarding is delegated to points_service.py.
-Premium checks are delegated to premium_service.py.
 """
 
 import aiosqlite
@@ -22,9 +21,7 @@ from services.points_service import (
     POINTS_JOIN_RAID,
     POINTS_COMPLETE_RAID,
     POINTS_CREATOR_BONUS,
-    PREMIUM_MULTIPLIER,
 )
-from services.premium_service import is_premium
 
 logger = logging.getLogger(__name__)
 
@@ -81,7 +78,6 @@ async def create_hub_raid(
     comment_ideas: Optional[str],
     hashtag_ideas: Optional[str],
     expiry_hours: int,
-    premium_only: bool,
     auto_approve: bool,
 ) -> int:
     """
@@ -97,13 +93,12 @@ async def create_hub_raid(
             INSERT INTO hub_raids
                 (creator_user_id, title, platform, target_link, instructions,
                  comment_ideas, hashtag_ideas, expiry_at, reward_points,
-                 premium_only, status, approved_at)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                 status, approved_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         """, (
             creator_id, title, platform, target_link, instructions,
             comment_ideas, hashtag_ideas, expiry_at.isoformat(),
             POINTS_COMPLETE_RAID,
-            1 if premium_only else 0,
             status,
             approved_at,
         ))
@@ -131,15 +126,13 @@ async def _expire_stale_raids(db) -> None:
 
 
 async def get_active_hub_raids(
-    user_is_premium: bool = False,
     page: int = 0,
 ) -> tuple[list[dict], int]:
     """
     Returns (raids_on_page, total_active_count).
     Featured raids appear first.
-    Premium-only raids are hidden from non-premium users.
     """
-    prem_filter = "" if user_is_premium else "AND hr.premium_only = 0"
+    prem_filter = ""
 
     async with get_db() as db:
         await _expire_stale_raids(db)
@@ -292,7 +285,6 @@ async def complete_hub_raid(
     """
     Marks a raid as completed. Returns (success, message, points_awarded).
     Awards completion points to the completer and bonus to the creator.
-    $BRAINROT premium holders earn 2x completion points.
     """
     if not await is_participant(raid_id, user_id):
         return False, "You must join the raid before marking it complete.", 0
@@ -305,8 +297,7 @@ async def complete_hub_raid(
     if raid["status"] != "active":
         return False, "This raid is no longer active.", 0
 
-    premium = await is_premium(user_id)
-    points = POINTS_COMPLETE_RAID * (PREMIUM_MULTIPLIER if premium else 1)
+    points = POINTS_COMPLETE_RAID
 
     async with get_db() as db:
         await db.execute("""
@@ -339,7 +330,6 @@ async def get_user_hub_stats(user_id: int, username: str) -> dict:
     rank          = await get_user_rank(user_id)
     my_raids      = await get_my_hub_raids(user_id)
     joined_raids  = await get_joined_hub_raids(user_id)
-    premium       = await is_premium(user_id)
 
     raids_completed = sum(
         1 for r in joined_raids if r["participation_status"] == "completed"
@@ -352,7 +342,6 @@ async def get_user_hub_stats(user_id: int, username: str) -> dict:
         "raids_created":  len(my_raids),
         "raids_joined":   len(joined_raids),
         "raids_completed": raids_completed,
-        "is_premium":     premium,
     }
 
 

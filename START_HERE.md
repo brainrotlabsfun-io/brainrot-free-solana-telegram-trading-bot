@@ -78,8 +78,8 @@ Here's the path I want, in order:
    API key, and add my own URL to .env.
 
 9. Wrap up — show me how to start and stop the bot, point me at DEPLOY.md
-   for keeping it online 24/7, and list the optional settings in
-   .env.example I might want later (branding, my own token, payments).
+   for keeping it online 24/7, and list the optional branding settings in
+   .env.example I might want later.
    Remind me which files must never be committed.
 
 Start with step 1 now. Just step 1.

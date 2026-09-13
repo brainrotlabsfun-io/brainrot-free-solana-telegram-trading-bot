@@ -7,7 +7,7 @@ Sections:
   A. Hub menu & navigation callbacks
   B. Active raids list & pagination
   C. Raid view, join, complete
-  D. My Raids / Joined Raids / My Points / Leaderboard / Premium Info
+  D. My Raids / Joined Raids / My Points / Leaderboard
   E. FSM: Start Raid (9-step flow)
   F. FSM: Complete Raid (proof collection)
 """
@@ -27,7 +27,6 @@ from bot.keyboards.raid_hub_menu import (
     build_back_to_hub,
     build_skip_cancel,
     build_cancel_only,
-    build_premium_choice,
     build_confirm_publish,
 )
 from services.raid_hub_service import (
@@ -46,7 +45,6 @@ from services.raid_hub_service import (
     HUB_PER_PAGE,
 )
 from services.points_service import get_leaderboard
-from services.premium_service import is_premium
 from utils.config import settings
 from utils.states import StartRaidForm, CompleteRaidForm
 
@@ -66,7 +64,6 @@ def _fmt_expiry(raw) -> str:
 
 def _fmt_raid_detail(raid: dict, join_count: int, comp_count: int) -> str:
     creator   = raid.get("creator_username") or f"User{raid['creator_user_id']}"
-    prem_tag  = "👑 PREMIUM ONLY" if raid.get("premium_only") else "🌐 Public"
     feat_tag  = "  🔥 Featured" if raid.get("featured") else ""
     expiry    = _fmt_expiry(raid.get("expiry_at", "Unknown"))
 
@@ -87,7 +84,6 @@ def _fmt_raid_detail(raid: dict, join_count: int, comp_count: int) -> str:
         f"\n🎯 <b>Reward:</b> {raid['reward_points']} pts"
         f"\n⏰ <b>Expires:</b> {expiry}"
         f"\n👥 <b>Joined:</b> {join_count}  ✅ <b>Completed:</b> {comp_count}"
-        f"\n🏷️ {prem_tag}{feat_tag}"
     )
     return text
 
@@ -148,8 +144,7 @@ async def cb_noop(callback: CallbackQuery) -> None:
 async def _show_raids_page(callback: CallbackQuery, page: int) -> None:
     await _register(callback)
     user_id  = callback.from_user.id
-    premium  = await is_premium(user_id)
-    raids, total = await get_active_hub_raids(user_is_premium=premium, page=page)
+    raids, total = await get_active_hub_raids(page=page)
 
     if not raids and page == 0:
         await callback.message.edit_text(
@@ -165,12 +160,10 @@ async def _show_raids_page(callback: CallbackQuery, page: int) -> None:
         return
 
     total_pages = max(1, (total + HUB_PER_PAGE - 1) // HUB_PER_PAGE)
-    prem_note   = " (👑 = premium only)" if premium else " (👑 raids hidden — get Premium)"
 
     await callback.message.edit_text(
         text=(
             f"⚔️ <b>Active Raids</b>  —  Page {page + 1}/{total_pages}"
-            f"\n{prem_note}\n\n"
             f"<i>Tap a raid to view details and join.</i>"
         ),
         reply_markup=build_raids_list(raids, page, total, HUB_PER_PAGE),
@@ -212,12 +205,6 @@ async def cb_view_raid(callback: CallbackQuery) -> None:
         return
 
     user_id  = callback.from_user.id
-    premium  = await is_premium(user_id)
-
-    # Block access to premium-only raids for free users
-    if raid.get("premium_only") and not premium:
-        await callback.answer("This is a Premium-only raid. Get $BRAINROT Premium to access.", show_alert=True)
-        return
 
     joined    = await is_participant(raid_id, user_id)
     completed = await has_completed_raid(raid_id, user_id)
@@ -244,13 +231,8 @@ async def cb_join_raid(callback: CallbackQuery) -> None:
 
     user_id  = callback.from_user.id
     username = callback.from_user.username or callback.from_user.first_name or f"User{user_id}"
-    premium  = await is_premium(user_id)
 
     raid = await get_hub_raid(raid_id)
-    if raid and raid.get("premium_only") and not premium:
-        await callback.answer("Premium-only raid. Get $BRAINROT Premium to join.", show_alert=True)
-        return
-
     success, msg = await join_hub_raid(raid_id, user_id, username)
 
     if not success:
@@ -331,19 +313,17 @@ async def fsm_receive_proof(message: Message, state: FSMContext) -> None:
         await message.answer(f"❌ {msg}")
         return
 
-    premium = await is_premium(user_id)
-    bonus_line = "\n🔥 <b>$BRAINROT Premium 2x bonus applied!</b>" if premium else ""
 
     await message.answer(
         f"✅ <b>Raid Completed!</b>\n\n"
-        f"You earned <b>{points} points</b>.{bonus_line}\n\n"
+        f"You earned <b>{points} points</b>.\n\n"
         f"Use <b>My Points</b> to check your rank.\n"
         f"Keep raiding to climb the leaderboard!"
     )
 
 
 # ══════════════════════════════════════════════════════════════════════════════
-# D. MY RAIDS / JOINED RAIDS / POINTS / LEADERBOARD / PREMIUM
+# D. MY RAIDS / JOINED RAIDS / POINTS / LEADERBOARD
 # ══════════════════════════════════════════════════════════════════════════════
 
 @router.callback_query(F.data == "hub:my_raids")
@@ -420,10 +400,8 @@ async def cb_my_points(callback: CallbackQuery) -> None:
     user_id  = callback.from_user.id
     username = callback.from_user.username or callback.from_user.first_name or f"User{user_id}"
     stats    = await get_user_hub_stats(user_id, username)
-    premium  = stats["is_premium"]
 
     rank_str  = f"#{stats['rank']}" if stats["rank"] else "Unranked"
-    prem_line = "\n👑 <b>$BRAINROT Premium</b> — 2x point bonus active!" if premium else ""
 
     await callback.message.edit_text(
         text=(
@@ -435,7 +413,6 @@ async def cb_my_points(callback: CallbackQuery) -> None:
             f"🚀 <b>Raids Created:</b>  {stats['raids_created']}\n"
             f"⚔️ <b>Raids Joined:</b>  {stats['raids_joined']}\n"
             f"✅ <b>Raids Completed:</b>  {stats['raids_completed']}"
-            f"{prem_line}"
         ),
         reply_markup=build_back_to_hub(),
     )
@@ -461,32 +438,6 @@ async def cb_hub_leaderboard(callback: CallbackQuery) -> None:
     await callback.answer()
 
 
-@router.callback_query(F.data == "hub:premium_info")
-async def cb_hub_premium_info(callback: CallbackQuery) -> None:
-    user_id = callback.from_user.id
-    premium = await is_premium(user_id)
-    status  = "✅ <b>ACTIVE</b>" if premium else "❌ Not active"
-
-    await callback.message.edit_text(
-        text=(
-            "👑 <b>$BRAINROT Premium</b>\n"
-            "━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n\n"
-            f"Your status: {status}\n\n"
-            "<b>Premium benefits:</b>\n"
-            "🔥 2x points on every raid completion\n"
-            "🚀 Launch premium-only raids\n"
-            "👁 See all raids including premium-only\n"
-            "📊 Higher daily raid creation limit\n"
-            "🏆 Premium badge on leaderboard\n\n"
-            "<b>How to get Premium:</b>\n"
-            "Hold <b>$BRAINROT</b> and contact an admin.\n"
-            "On-chain auto-verification coming soon.\n\n"
-            f"Contract:\n<code>{settings.BRAINROT_MINT or 'not configured'}</code>"
-        ),
-        reply_markup=build_back_to_hub(),
-    )
-    await callback.answer()
-
 
 # ══════════════════════════════════════════════════════════════════════════════
 # E. FSM: START RAID FLOW
@@ -496,15 +447,14 @@ async def cb_hub_premium_info(callback: CallbackQuery) -> None:
 async def cb_start_raid(callback: CallbackQuery, state: FSMContext) -> None:
     await _register(callback)
     user_id = callback.from_user.id
-    premium = await is_premium(user_id)
 
     # Daily limit check
-    limit = settings.PREMIUM_DAILY_RAID_LIMIT if premium else settings.DAILY_RAID_LIMIT
+    limit = settings.DAILY_RAID_LIMIT
     created_today = await count_user_raids_today(user_id)
 
     if created_today >= limit:
         await callback.answer(
-            f"Daily limit reached ({limit} raids/day). Upgrade to Premium for more.",
+            f"Daily limit reached ({limit} raids/day).",
             show_alert=True,
         )
         return
@@ -666,40 +616,9 @@ async def fsm_expiry_hours(message: Message, state: FSMContext) -> None:
         return
 
     await state.update_data(expiry_hours=hours)
-    await state.set_state(StartRaidForm.premium_only)
-
-    user_id = message.from_user.id
-    premium = await is_premium(user_id)
-
-    if premium:
-        await message.answer(
-            "Should this raid be <b>Premium Only</b>?\n\n"
-            "👑 Premium Only — only $BRAINROT holders can join\n"
-            "🌐 Public — anyone can join",
-            reply_markup=build_premium_choice(),
-        )
-    else:
-        # Free users cannot create premium-only raids
-        await state.update_data(premium_only=False)
-        await _show_confirm(message, state)
+    await _show_confirm(message, state)
 
 
-# Step 8 — Premium choice (callback)
-@router.callback_query(
-    F.data.in_({"hub:fsm:prem_yes", "hub:fsm:prem_no"}),
-    StartRaidForm.premium_only,
-)
-async def fsm_premium_choice(callback: CallbackQuery, state: FSMContext) -> None:
-    user_id = callback.from_user.id
-    premium = await is_premium(user_id)
-
-    if callback.data == "hub:fsm:prem_yes" and not premium:
-        await callback.answer("Only $BRAINROT Premium users can create premium-only raids.", show_alert=True)
-        return
-
-    await state.update_data(premium_only=(callback.data == "hub:fsm:prem_yes"))
-    await _show_confirm(callback.message, state)
-    await callback.answer()
 
 
 async def _show_confirm(message: Message, state: FSMContext) -> None:
@@ -707,7 +626,6 @@ async def _show_confirm(message: Message, state: FSMContext) -> None:
     await state.set_state(StartRaidForm.confirm)
     data = await state.get_data()
 
-    prem_label = "👑 Premium Only" if data.get("premium_only") else "🌐 Public"
     comments   = data.get("comment_ideas") or "<i>None</i>"
     hashtags   = data.get("hashtag_ideas") or "<i>None</i>"
 
@@ -718,7 +636,6 @@ async def _show_confirm(message: Message, state: FSMContext) -> None:
         f"<b>Platform:</b> {data.get('platform')}\n"
         f"<b>Link:</b> {data.get('target_link')}\n"
         f"<b>Duration:</b> {data.get('expiry_hours')} hours\n"
-        f"<b>Access:</b> {prem_label}\n"
         f"<b>Points:</b> 10 pts per completion\n\n"
         f"<b>Instructions:</b>\n{data.get('instructions')}\n\n"
         f"<b>Comment Ideas:</b> {comments}\n"
@@ -748,7 +665,6 @@ async def fsm_publish_raid(callback: CallbackQuery, state: FSMContext) -> None:
         comment_ideas   = data.get("comment_ideas"),
         hashtag_ideas   = data.get("hashtag_ideas"),
         expiry_hours    = data["expiry_hours"],
-        premium_only    = data.get("premium_only", False),
         auto_approve    = settings.RAID_AUTO_APPROVE,
     )
 

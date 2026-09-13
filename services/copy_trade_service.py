@@ -6,10 +6,9 @@ CRUD layer for the Copy Trading module.
 Handles:
   - Per-user copy trade settings (enabled state, sizing, risk controls)
   - Tracked wallet management (add/remove/list)
-  - Token blacklist & whitelist (tier-gated)
+  - Token blacklist & whitelist
   - Processed TX deduplication
   - Job audit trail
-  - Tier-based entitlement enforcement
 """
 
 import logging
@@ -22,89 +21,13 @@ from utils.config import settings
 
 logger = logging.getLogger(__name__)
 
-# Absolute safety cap — even Supreme Black cannot exceed this
-ABSOLUTE_MAX_WALLETS = 500
+# ── Operational limits ────────────────────────────────────────────────────────
+# Not access tiers - every feature is available to every user. These are just
+# sanity caps so one account cannot spam the RPC or blow up the DB.
 
-# ── Tier limit constants ──────────────────────────────────────────────────────
-
-FREE_LIMITS = {
-    "max_wallets":          3,
-    "can_copy_sells":       False,
-    "can_use_percentage":   False,
-    "can_use_auto_sell":    False,
-    "can_use_tp_sl":        False,
-    "can_use_blacklist":    False,
-    "can_use_whitelist":    False,
-    "can_use_liq_filter":   False,
-    "can_use_max_buy_prot": False,
-    "can_use_cooldown":     False,
-    "max_trades_per_hour":  30,
-    "blacklist_limit":      0,
-    "whitelist_limit":      0,
-}
-
-SUPREME_LIMITS = {
-    "max_wallets":          20,
-    "can_copy_sells":       True,
-    "can_use_percentage":   True,
-    "can_use_auto_sell":    False,
-    "can_use_tp_sl":        False,
-    "can_use_blacklist":    True,
-    "can_use_whitelist":    False,
-    "can_use_liq_filter":   True,
-    "can_use_max_buy_prot": True,
-    "can_use_cooldown":     True,
-    "max_trades_per_hour":  80,
-    "blacklist_limit":      50,
-    "whitelist_limit":      0,
-}
-
-SUPREME_BLACK_LIMITS = {
-    "max_wallets":          ABSOLUTE_MAX_WALLETS,
-    "can_copy_sells":       True,
-    "can_use_percentage":   True,
-    "can_use_auto_sell":    True,
-    "can_use_tp_sl":        True,
-    "can_use_blacklist":    True,
-    "can_use_whitelist":    True,
-    "can_use_liq_filter":   True,
-    "can_use_max_buy_prot": True,
-    "can_use_cooldown":     True,
-    "max_trades_per_hour":  150,
-    "blacklist_limit":      9999,
-    "whitelist_limit":      9999,
-}
-
-
-@dataclass
-class CopyTradeEntitlements:
-    tier:                 str
-    max_wallets:          int
-    can_copy_sells:       bool
-    can_use_percentage:   bool
-    can_use_auto_sell:    bool
-    can_use_tp_sl:        bool
-    can_use_blacklist:    bool
-    can_use_whitelist:    bool
-    can_use_liq_filter:   bool
-    can_use_max_buy_prot: bool
-    can_use_cooldown:     bool
-    max_trades_per_hour:  int
-    blacklist_limit:      int
-    whitelist_limit:      int
-
-
-async def get_copy_trade_entitlements(user_id: int) -> CopyTradeEntitlements:
-    """Returns copy-trade entitlements based on the user's active tier."""
-    from services.brainrot_token_gate import get_active_tier
-    tier = await get_active_tier(user_id)
-    if tier == "supreme_black":
-        lims = SUPREME_BLACK_LIMITS
-    elif tier == "supreme":
-        lims = SUPREME_LIMITS
-    else:
-        lims = FREE_LIMITS
-    return CopyTradeEntitlements(tier=tier, **lims)
+MAX_WALLETS         = 500   # tracked wallets per user
+MAX_TRADES_PER_HOUR = 150   # copied trades per user per hour
+TOKEN_LIST_LIMIT    = 999   # entries per blacklist / whitelist
 
 
 # ── Settings Defaults ─────────────────────────────────────────────────────────
@@ -210,12 +133,11 @@ async def add_tracked_wallet(
     if not _is_valid_solana_address(wallet_address):
         return False, "Invalid Solana wallet address."
 
-    ents = await get_copy_trade_entitlements(user_id)
     current = await get_tracked_wallets(user_id)
 
-    if len(current) >= ents.max_wallets:
+    if len(current) >= MAX_WALLETS:
         return False, (
-            f"Wallet limit reached ({ents.max_wallets} for {ents.tier.replace('_', ' ').title()} tier). "
+            f"Wallet limit reached ({MAX_WALLETS} max). "
             f"Upgrade to add more."
         )
 
@@ -320,17 +242,13 @@ async def get_users_tracking_wallet(wallet_address: str) -> list[dict]:
 # ── Token Blacklist ───────────────────────────────────────────────────────────
 
 async def add_to_token_blacklist(user_id: int, token_address: str) -> tuple[bool, str]:
-    ents = await get_copy_trade_entitlements(user_id)
-    if not ents.can_use_blacklist:
-        return False, "Token blacklist requires SUPREME or higher."
-
     token_address = token_address.strip()
     if not _is_valid_solana_address(token_address):
         return False, "Invalid token address."
 
     current = await get_token_blacklist(user_id)
-    if len(current) >= ents.blacklist_limit:
-        return False, f"Blacklist full ({ents.blacklist_limit} max for your tier)."
+    if len(current) >= TOKEN_LIST_LIMIT:
+        return False, f"Blacklist full ({TOKEN_LIST_LIMIT} max)."
 
     try:
         async with get_db() as db:
@@ -374,17 +292,13 @@ async def get_blacklisted_addresses(user_id: int) -> set[str]:
 # ── Token Whitelist ───────────────────────────────────────────────────────────
 
 async def add_to_token_whitelist(user_id: int, token_address: str) -> tuple[bool, str]:
-    ents = await get_copy_trade_entitlements(user_id)
-    if not ents.can_use_whitelist:
-        return False, "Token whitelist requires SUPREME BLACK."
-
     token_address = token_address.strip()
     if not _is_valid_solana_address(token_address):
         return False, "Invalid token address."
 
     current = await get_token_whitelist(user_id)
-    if len(current) >= ents.whitelist_limit:
-        return False, f"Whitelist full ({ents.whitelist_limit} max)."
+    if len(current) >= TOKEN_LIST_LIMIT:
+        return False, f"Whitelist full ({TOKEN_LIST_LIMIT} max)."
 
     try:
         async with get_db() as db:

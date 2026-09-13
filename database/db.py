@@ -20,6 +20,17 @@ async def init_db() -> None:
     """
     async with aiosqlite.connect(DB_PATH) as db:
 
+        async def _migrate(sql: str) -> None:
+            """
+            Best-effort data migration for existing installs.
+            Skipped silently when the table does not exist yet — on a fresh
+            database there is nothing to migrate.
+            """
+            try:
+                await db.execute(sql)
+            except Exception:
+                pass
+
         # ══════════════════════════════════════════════════════════════════════
         # LEGACY RAID CENTER TABLES (admin-created raids)
         # ══════════════════════════════════════════════════════════════════════
@@ -87,7 +98,6 @@ async def init_db() -> None:
                 hashtag_ideas    TEXT,
                 expiry_at        TIMESTAMP NOT NULL,
                 reward_points    INTEGER DEFAULT 10,
-                premium_only     INTEGER DEFAULT 0,
                 status           TEXT    DEFAULT 'pending',
                 featured         INTEGER DEFAULT 0,
                 created_at       TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
@@ -121,20 +131,6 @@ async def init_db() -> None:
         """)
 
         await db.execute("""
-            CREATE TABLE IF NOT EXISTS premium_users (
-                id               INTEGER PRIMARY KEY AUTOINCREMENT,
-                user_id          INTEGER NOT NULL UNIQUE,
-                active           INTEGER DEFAULT 1,
-                entitlement_type TEXT    DEFAULT 'manual',
-                created_at       TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-            )
-        """)
-
-        # ══════════════════════════════════════════════════════════════════════
-        # BURN / BADGE SYSTEM TABLES
-        # ══════════════════════════════════════════════════════════════════════
-
-        await db.execute("""
             CREATE TABLE IF NOT EXISTS wallet_links (
                 id             INTEGER PRIMARY KEY AUTOINCREMENT,
                 user_id        INTEGER NOT NULL UNIQUE,
@@ -144,93 +140,10 @@ async def init_db() -> None:
             )
         """)
 
-        await db.execute("""
-            CREATE TABLE IF NOT EXISTS burn_activations (
-                id              INTEGER PRIMARY KEY AUTOINCREMENT,
-                user_id         INTEGER NOT NULL,
-                wallet_address  TEXT    NOT NULL,
-                token_mint      TEXT    NOT NULL,
-                required_amount REAL    NOT NULL DEFAULT 0,
-                burned_amount   REAL    NOT NULL DEFAULT 0,
-                tx_signature    TEXT    NOT NULL UNIQUE,
-                status          TEXT    NOT NULL DEFAULT 'pending',
-                verified_at     TIMESTAMP,
-                created_at      TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                updated_at      TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-            )
-        """)
-
-        await db.execute("""
-            CREATE TABLE IF NOT EXISTS badge_definitions (
-                id                  INTEGER PRIMARY KEY AUTOINCREMENT,
-                badge_key           TEXT    NOT NULL UNIQUE,
-                badge_name          TEXT    NOT NULL,
-                description         TEXT,
-                min_total_burn      REAL    DEFAULT 0,
-                min_burn_count      INTEGER DEFAULT 1,
-                requires_activation INTEGER DEFAULT 0,
-                icon                TEXT    DEFAULT '🏅',
-                tier_rank           INTEGER DEFAULT 1,
-                active              INTEGER DEFAULT 1,
-                created_at          TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                updated_at          TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-            )
-        """)
-
-        await db.execute("""
-            CREATE TABLE IF NOT EXISTS user_badges (
-                id                   INTEGER PRIMARY KEY AUTOINCREMENT,
-                user_id              INTEGER NOT NULL,
-                badge_key            TEXT    NOT NULL,
-                awarded_at           TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                source_tx_signature  TEXT,
-                active               INTEGER DEFAULT 1,
-                created_at           TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                updated_at           TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                UNIQUE(user_id, badge_key)
-            )
-        """)
-
-        await db.execute("""
-            CREATE TABLE IF NOT EXISTS user_burn_stats (
-                id               INTEGER PRIMARY KEY AUTOINCREMENT,
-                user_id          INTEGER NOT NULL UNIQUE,
-                total_burned     REAL    DEFAULT 0,
-                burn_count       INTEGER DEFAULT 0,
-                last_burn_at     TIMESTAMP,
-                highest_badge_key TEXT,
-                updated_at       TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-            )
-        """)
-
         # ── Indexes ─────────────────────────────────────────────────────────────
-        await db.execute(
-            "CREATE INDEX IF NOT EXISTS idx_burn_activations_user  ON burn_activations(user_id)"
-        )
-        await db.execute(
-            "CREATE INDEX IF NOT EXISTS idx_burn_activations_tx    ON burn_activations(tx_signature)"
-        )
-        await db.execute(
-            "CREATE INDEX IF NOT EXISTS idx_user_badges_user       ON user_badges(user_id)"
-        )
         await db.execute(
             "CREATE INDEX IF NOT EXISTS idx_wallet_links_user      ON wallet_links(user_id)"
         )
-
-        # ── Migrate holder_access: add columns that may not exist yet ─────────
-        _holder_access_new_cols = [
-            "ALTER TABLE holder_access ADD COLUMN wallet_address          TEXT    DEFAULT ''",
-            "ALTER TABLE holder_access ADD COLUMN activated_via           TEXT    DEFAULT 'manual'",
-            "ALTER TABLE holder_access ADD COLUMN activation_tx_signature TEXT",
-            "ALTER TABLE holder_access ADD COLUMN activated_at            TIMESTAMP",
-            "ALTER TABLE holder_access ADD COLUMN expires_at              TIMESTAMP",
-            "ALTER TABLE holder_access ADD COLUMN updated_at              TIMESTAMP DEFAULT CURRENT_TIMESTAMP",
-        ]
-        for col_sql in _holder_access_new_cols:
-            try:
-                await db.execute(col_sql)
-            except Exception:
-                pass  # Column already exists
 
         # ── Migrate trading_wallets: add updated_at if missing ───────────────
         try:
@@ -257,23 +170,6 @@ async def init_db() -> None:
         # ══════════════════════════════════════════════════════════════════════
         # SNIPER TOOL TABLES
         # ══════════════════════════════════════════════════════════════════════
-
-        await db.execute("""
-            CREATE TABLE IF NOT EXISTS holder_access (
-                id                      INTEGER PRIMARY KEY AUTOINCREMENT,
-                user_id                 INTEGER NOT NULL UNIQUE,
-                wallet_address          TEXT    DEFAULT '',
-                tier                    TEXT    NOT NULL DEFAULT 'supreme',
-                active                  INTEGER DEFAULT 1,
-                activated_via           TEXT    DEFAULT 'manual',
-                activation_tx_signature TEXT,
-                activated_at            TIMESTAMP,
-                expires_at              TIMESTAMP,
-                granted_by              INTEGER,
-                granted_at              TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                updated_at              TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-            )
-        """)
 
         await db.execute("""
             CREATE TABLE IF NOT EXISTS sniper_settings (
@@ -406,58 +302,58 @@ async def init_db() -> None:
 
         # ── Migrate auto_buy_settings: fix bad defaults written by earlier schema ──
         # Slippage of 1.0% fails on pump.fun; fix any row where it was never changed.
-        await db.execute(
+        await _migrate(
             "UPDATE auto_buy_settings SET slippage = 15.0 WHERE slippage <= 1.5"
         )
         # Priority fee: old default was 0.000005 (too low — TXs don't land).
         # Upgrade any row still at the old default to the reliable 0.005 value.
-        await db.execute(
+        await _migrate(
             "UPDATE auto_buy_settings SET priority_fee = 0.005 WHERE priority_fee <= 0.0001"
         )
         # Copy trade priority fee — same issue.
-        await db.execute(
+        await _migrate(
             "UPDATE copy_trade_settings SET priority_fee = 0.005 WHERE priority_fee <= 0.0001"
         )
         # Auto-exit priority fee — upgrade from 0.0001 factory default.
-        await db.execute(
+        await _migrate(
             "UPDATE auto_exit_settings SET custom_priority_fee = 0.005 WHERE custom_priority_fee <= 0.001"
         )
         # Fix updated_at for rows that were created with CURRENT_TIMESTAMP default but
         # the user never actually configured anything — reset to NULL so the worker's
         # "never_configured" check works correctly.
-        await db.execute("""
+        await _migrate("""
             UPDATE auto_exit_settings
             SET updated_at = NULL
             WHERE enabled = 0 AND selected_preset_id IS NULL
         """)
         # score_threshold: old default was 65 (too high), then 30 (too low — buys too much noise).
         # Migrate rows still at 30 (factory default) to 45 for better signal quality.
-        await db.execute(
+        await _migrate(
             "UPDATE auto_buy_settings SET score_threshold = 45 WHERE score_threshold IN (30, 65) AND enabled = 0"
         )
         # Sniper filters: update still-at-default rows to tighter values.
-        await db.execute(
+        await _migrate(
             "UPDATE sniper_settings SET min_liquidity = 5000 WHERE min_liquidity <= 2000"
         )
-        await db.execute(
+        await _migrate(
             "UPDATE sniper_settings SET min_volume = 2000 WHERE min_volume <= 1000"
         )
-        await db.execute(
+        await _migrate(
             "UPDATE sniper_settings SET min_buys = 15 WHERE min_buys <= 10"
         )
-        await db.execute(
+        await _migrate(
             "UPDATE sniper_settings SET max_token_age_minutes = 30 WHERE max_token_age_minutes >= 60"
         )
         # max_buys_per_hour: 5 was the old default — lower to 3 for selectivity.
-        await db.execute(
+        await _migrate(
             "UPDATE auto_buy_settings SET max_buys_per_hour = 3 WHERE max_buys_per_hour >= 5 AND enabled = 0"
         )
         # cooldown_seconds: 60 → 90
-        await db.execute(
+        await _migrate(
             "UPDATE auto_buy_settings SET cooldown_seconds = 90 WHERE cooldown_seconds = 60 AND enabled = 0"
         )
         # Align buy size
-        await db.execute(
+        await _migrate(
             "UPDATE auto_buy_settings SET max_buy_size_sol = 0.05 WHERE max_buy_size_sol >= 0.1 AND enabled = 0"
         )
 
@@ -470,7 +366,7 @@ async def init_db() -> None:
         # Reset min_initial_buy_sol for all users — the Liq Sniper tab sets it
         # explicitly when activated. Any stuck value from a previous session
         # (including DEGEN FIRE users who also have score_threshold=1) is cleared here.
-        await db.execute("UPDATE auto_buy_settings SET min_initial_buy_sol = 0")
+        await _migrate("UPDATE auto_buy_settings SET min_initial_buy_sol = 0")
         try:
             await db.execute(
                 "ALTER TABLE auto_buy_settings ADD COLUMN liq_exit_preset_id INTEGER DEFAULT NULL"
@@ -546,13 +442,13 @@ async def init_db() -> None:
             pass
 
         # ── Migrate candle_sniper_settings: align DB defaults with code defaults ──
-        await db.execute(
+        await _migrate(
             "UPDATE candle_sniper_settings SET min_confirmations = 3 WHERE min_confirmations >= 5 AND enabled = 0"
         )
-        await db.execute(
+        await _migrate(
             "UPDATE candle_sniper_settings SET confidence_threshold = 45 WHERE confidence_threshold >= 55 AND enabled = 0"
         )
-        await db.execute(
+        await _migrate(
             "UPDATE candle_sniper_settings SET max_open_positions = 5 WHERE max_open_positions <= 3 AND enabled = 0"
         )
 
@@ -638,7 +534,7 @@ async def init_db() -> None:
         """)
 
         # ══════════════════════════════════════════════════════════════════════
-        # SUPREME BLACK — AUTO-EXIT MANAGER TABLES
+        # AUTO-EXIT MANAGER TABLES
         # ══════════════════════════════════════════════════════════════════════
 
         await db.execute("""
@@ -1069,137 +965,10 @@ async def init_db() -> None:
             except Exception:
                 pass  # Column already exists
 
-        # ══════════════════════════════════════════════════════════════════════
-        # SOL PAYMENT — TIMED SUPREME BLACK ACCESS
-        # ══════════════════════════════════════════════════════════════════════
-
-        await db.execute("""
-            CREATE TABLE IF NOT EXISTS sol_payment_pending (
-                user_id        INTEGER NOT NULL UNIQUE,
-                expected_sol   REAL    NOT NULL,
-                duration_hours INTEGER NOT NULL,
-                from_wallet    TEXT    NOT NULL,
-                initiated_at   TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                expires_at     TIMESTAMP NOT NULL
-            )
-        """)
-
-        await db.execute("""
-            CREATE TABLE IF NOT EXISTS processed_sol_txs (
-                id           INTEGER PRIMARY KEY AUTOINCREMENT,
-                tx_signature TEXT    NOT NULL UNIQUE,
-                user_id      INTEGER NOT NULL,
-                processed_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-            )
-        """)
-
-        await db.execute(
-            "CREATE INDEX IF NOT EXISTS idx_sol_txs_sig ON processed_sol_txs(tx_signature)"
-        )
-
-        # ══════════════════════════════════════════════════════════════════════
-        # AFFILIATE / REFERRAL SYSTEM TABLES
-        # These are ADDITIVE — they do NOT modify or replace the burn access
-        # system. Burn access (burn_activations, holder_access, wallet_links)
-        # remains fully intact and independent.
-        # ══════════════════════════════════════════════════════════════════════
-
-        # Per-wallet affiliate stats and tier tracking
-        await db.execute("""
-            CREATE TABLE IF NOT EXISTS affiliate_profiles (
-                id                          INTEGER PRIMARY KEY AUTOINCREMENT,
-                user_id                     INTEGER,
-                telegram_username           TEXT,
-                affiliate_wallet_address    TEXT    NOT NULL UNIQUE,
-                total_referrals             INTEGER DEFAULT 0,
-                total_commission_earned_usd REAL    DEFAULT 0,
-                total_commission_paid_usd   REAL    DEFAULT 0,
-                unpaid_commission_usd       REAL    DEFAULT 0,
-                current_tier                TEXT    DEFAULT 'None',
-                highest_tier                TEXT    DEFAULT 'None',
-                created_at                  TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                updated_at                  TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-            )
-        """)
-
-        # One record per referred user — tracks which affiliate wallet referred them
-        await db.execute("""
-            CREATE TABLE IF NOT EXISTS referral_events (
-                id                          INTEGER PRIMARY KEY AUTOINCREMENT,
-                referred_user_id            INTEGER NOT NULL UNIQUE,
-                affiliate_wallet_address    TEXT    NOT NULL,
-                supreme_signup_status       TEXT    DEFAULT 'pending',
-                affiliate_commission_eligible INTEGER DEFAULT 0,
-                created_at                  TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                updated_at                  TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-            )
-        """)
-
-        # $100 qualifying payment records — separate from burn_activations
-        # burn_access_verified and supreme_payment_verified are distinct states
-        await db.execute("""
-            CREATE TABLE IF NOT EXISTS supreme_payment_verifications (
-                id                  INTEGER PRIMARY KEY AUTOINCREMENT,
-                user_id             INTEGER NOT NULL,
-                payment_amount_usd  REAL    DEFAULT 100.0,
-                payment_amount_sol  REAL    NOT NULL,
-                payment_tx_hash     TEXT    UNIQUE,
-                payment_status      TEXT    DEFAULT 'pending',
-                verified_at         TIMESTAMP,
-                created_at          TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                updated_at          TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-            )
-        """)
-
-        # Commission ledger — one entry per confirmed qualifying payment
-        # UNIQUE(referred_user_id) prevents duplicate commissions
-        await db.execute("""
-            CREATE TABLE IF NOT EXISTS commission_ledger (
-                id                          INTEGER PRIMARY KEY AUTOINCREMENT,
-                affiliate_wallet_address    TEXT    NOT NULL,
-                referred_user_id            INTEGER NOT NULL UNIQUE,
-                commission_amount_usd       REAL    DEFAULT 21.0,
-                commission_status           TEXT    DEFAULT 'pending',
-                payout_tx_hash              TEXT,
-                created_at                  TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                updated_at                  TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-            )
-        """)
-
-        # Pending $100 Supreme signup payments (parallel to sol_payment_pending)
-        # Expires after 30 minutes if not confirmed
-        await db.execute("""
-            CREATE TABLE IF NOT EXISTS affiliate_signup_pending (
-                user_id          INTEGER NOT NULL UNIQUE,
-                from_wallet      TEXT    NOT NULL,
-                expected_sol     REAL    NOT NULL,
-                affiliate_wallet TEXT,
-                initiated_at     TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                expires_at       TIMESTAMP NOT NULL
-            )
-        """)
-
-        # ── Affiliate indexes ──────────────────────────────────────────────────
-        await db.execute(
-            "CREATE INDEX IF NOT EXISTS idx_affiliate_wallet   ON affiliate_profiles(affiliate_wallet_address)"
-        )
-        await db.execute(
-            "CREATE INDEX IF NOT EXISTS idx_referral_user      ON referral_events(referred_user_id)"
-        )
-        await db.execute(
-            "CREATE INDEX IF NOT EXISTS idx_referral_affiliate ON referral_events(affiliate_wallet_address)"
-        )
-        await db.execute(
-            "CREATE INDEX IF NOT EXISTS idx_commission_wallet  ON commission_ledger(affiliate_wallet_address)"
-        )
-        await db.execute(
-            "CREATE INDEX IF NOT EXISTS idx_spv_user           ON supreme_payment_verifications(user_id)"
-        )
-
         # ── Persistent FSM Storage ─────────────────────────────────────────────
         # Keeps aiogram FSM states alive across bot restarts.
-        # Prevents "session expired" when users are mid-flow (affiliate signup,
-        # sniper settings, supreme activation, etc.) and the bot restarts.
+        # Prevents "session expired" when users are mid-flow (sniper settings,
+        # preset creation, etc.) and the bot restarts.
 
         await db.execute("""
             CREATE TABLE IF NOT EXISTS fsm_states (

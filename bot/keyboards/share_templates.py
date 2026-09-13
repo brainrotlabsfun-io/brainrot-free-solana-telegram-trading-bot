@@ -73,8 +73,8 @@ WALLET_SCOUT_SHARE_URL = _url(
     "#BRAINROT #Solana #WalletScout #AlphaHunting #DeFi"
 )
 
-SUPREME_SHARE_URL = _url(
-    "⬛ Running $BRAINROT Supreme Black on Solana — full auto TP/SL, trailing stops, and smart exit automation.\n\n"
+AUTOEXIT_SHARE_URL = _url(
+    "⬛ Running auto-exit on Solana — full auto TP/SL, trailing stops, and smart exit automation.\n\n"
     f"Powered by {settings.BRAND_HANDLE} 🔥\n\n"
-    "#BRAINROT #Solana #SupremeBlack #DeFiTrading #CryptoBot"
+    "#Solana #DeFiTrading #CryptoBot"
 )

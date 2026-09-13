@@ -21,7 +21,6 @@ Menu flow:
     │     ├── cs:pos_detail:{id}
     │     └── cs:pos_close:{id}
     ├── cs:debug_prompt     — FSM: enter token address for equation debug
-    └── cs:locked:*         — locked features (show upgrade prompt)
 """
 
 import logging
@@ -40,13 +39,12 @@ from bot.keyboards.candle_sniper_menu import (
 )
 from services.candle_sniper_service import (
     get_cs_settings, update_cs_field, enable_candle_sniper,
-    disable_candle_sniper, toggle_candle_sniper, get_cs_entitlements,
+    disable_candle_sniper, toggle_candle_sniper, CANDIDATE_DISPLAY_LIMIT,
     get_top_candidates, get_cs_open_positions, close_cs_position,
     fetch_cs_token_data, count_open_cs_positions,
     get_user_watchlist, add_watchlist_token, remove_watchlist_token,
 )
 from services.candle_sniper_engine import score_candidate, apply_profile_filters
-from services.brainrot_token_gate import get_active_tier
 from utils.candle_sniper_states import CSFieldEditState
 from utils.config import settings
 from utils.share_utils import bot_link as _bot_link, website_buttons as _website_buttons, share_footer as _share_footer
@@ -72,12 +70,6 @@ _FIELD_META: dict[str, tuple] = {
     "max_hold_minutes":      ("Max Hold Time",         "minutes",         int,   30,   10080),
 }
 _VALID_TIMEFRAMES = {"1m", "3m", "5m", "15m"}
-
-# ── Tier label helpers ────────────────────────────────────────────────────────
-
-def _tier_badge(tier: str) -> str:
-    return {"supreme_black": "🔱 SUPREME BLACK", "supreme": "👑 SUPREME"}.get(tier, "🆓 Free")
-
 
 # ── /candle_sniper command ────────────────────────────────────────────────────
 
@@ -115,15 +107,13 @@ async def _send_main_menu(target, user_id: int, edit: bool = False) -> None:
     import time
     from services.candle_sniper_worker import get_stats
     cfg  = await get_cs_settings(user_id)
-    tier = await get_active_tier(user_id)
-    ents = get_cs_entitlements(tier)
 
     enabled  = bool(cfg.get("enabled"))
     auto_buy = bool(cfg.get("auto_buy"))
     profile  = cfg.get("strategy_profile", "balanced").title()
 
     open_count      = await count_open_cs_positions(user_id)
-    max_pos_display = "∞" if ents.max_open_positions >= 9999 else str(ents.max_open_positions)
+    max_pos_display = str(cfg.get("max_open_positions") or 5)
 
     stats   = get_stats()
     cycles  = stats.get("discovery_cycles", 0)
@@ -137,15 +127,6 @@ async def _send_main_menu(target, user_id: int, edit: bool = False) -> None:
     else:
         last_scan = "not yet"
 
-    if tier == "supreme_black":
-        tier_label = "🔱 SUPREME BLACK"
-        tier_bar   = "▓▓▓▓▓▓▓▓▓▓ CLEARANCE: MAX"
-    elif tier == "supreme":
-        tier_label = "👑 SUPREME"
-        tier_bar   = "▓▓▓▓▓▓▓░░░ CLEARANCE: HIGH"
-    else:
-        tier_label = "🆓 FREE"
-        tier_bar   = "▓░░░░░░░░░ CLEARANCE: BASIC"
 
     power_icon = "🟢 ONLINE" if enabled else "🔴 OFFLINE"
     ab_icon    = "🤖 ON"     if auto_buy else "⏸ OFF"
@@ -158,14 +139,13 @@ async def _send_main_menu(target, user_id: int, edit: bool = False) -> None:
 
     text = (
         f"🕯️ <b>CANDLE SNIPER</b>\n"
-        f"<code>{tier_bar}  {tier_label}</code>\n\n"
         f"<code>{power_icon}   {ab_icon}   {profile}</code>\n"
         f"<code>📂 {open_count}/{max_pos_display} open   💰 {cfg.get('trade_size_sol', 0.05):.4f} SOL   TP+{cfg.get('take_profit_pct',50):.0f}% SL-{cfg.get('stop_loss_pct',15):.0f}%</code>\n"
         f"<code>🔄 {cycles} scans  🎯 {scored} scored  ✅ {buys} bought  ⏱ {last_scan}</code>"
         f"{hint}"
     )
 
-    markup = build_cs_main(cfg, tier, ents)
+    markup = build_cs_main(cfg)
     try:
         if edit:
             await target.edit_text(text, reply_markup=markup, parse_mode="HTML")
@@ -202,8 +182,6 @@ async def cb_cs_toggle(callback: CallbackQuery) -> None:
     user_id = callback.from_user.id
     new_state = await toggle_candle_sniper(user_id)
     cfg  = await get_cs_settings(user_id)
-    tier = await get_active_tier(user_id)
-    ents = get_cs_entitlements(tier)
 
     if new_state:
         note = "\n\n<i>Your previous sniper config has been saved and will be restored when you disable CS mode.</i>"
@@ -215,13 +193,13 @@ async def cb_cs_toggle(callback: CallbackQuery) -> None:
     status  = "🟢 ACTIVE" if new_state else "⚪ Inactive"
     profile = cfg.get("strategy_profile", "balanced").title()
     text = (
-        f"🕯️ <b>Candle Sniper</b>  {_tier_badge(tier)}\n"
+        f"🕯️ <b>Candle Sniper</b>\n"
         f"━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n\n"
         f"<b>Status:</b> {status}\n"
         f"<b>Profile:</b> {profile}"
         f"{note}"
     )
-    await callback.message.edit_text(text, reply_markup=build_cs_main(cfg, tier, ents),
+    await callback.message.edit_text(text, reply_markup=build_cs_main(cfg),
                                      parse_mode="HTML")
 
 
@@ -316,8 +294,6 @@ async def cb_cs_settings(callback: CallbackQuery, state: FSMContext) -> None:
 async def _edit_settings_menu(callback: CallbackQuery) -> None:
     user_id = callback.from_user.id
     cfg     = await get_cs_settings(user_id)
-    tier    = await get_active_tier(user_id)
-    ents    = get_cs_entitlements(tier)
 
     text = (
         f"⚙️ <b>Candle Sniper Settings</b>\n"
@@ -339,7 +315,7 @@ async def _edit_settings_menu(callback: CallbackQuery) -> None:
     )
     try:
         await callback.message.edit_text(
-            text, reply_markup=build_cs_settings(cfg, ents), parse_mode="HTML"
+            text, reply_markup=build_cs_settings(cfg), parse_mode="HTML"
         )
     except Exception:
         pass
@@ -355,13 +331,6 @@ async def cb_cs_set_field(callback: CallbackQuery, state: FSMContext) -> None:
         return
 
     user_id = callback.from_user.id
-    tier    = await get_active_tier(user_id)
-    ents    = get_cs_entitlements(tier)
-
-    # Gate trailing stop on SUPREME
-    if field == "trailing_stop_pct" and not ents.can_trailing_stop:
-        await callback.answer("👑 Trailing Stop requires SUPREME tier", show_alert=True)
-        return
 
     label, unit, typ, mn, mx = _FIELD_META[field]
     await state.set_state(CSFieldEditState.waiting_value)
@@ -427,24 +396,12 @@ async def _handle_field_edit(message: Message, state: FSMContext) -> None:
     await state.clear()
     await update_cs_field(user_id, field, value)
     cfg  = await get_cs_settings(user_id)
-    tier = await get_active_tier(user_id)
-    ents = get_cs_entitlements(tier)
 
     await message.answer(f"✅ <b>{label}</b> set to <b>{value} {unit}</b>", parse_mode="HTML")
     await message.answer(
         "⚙️ <b>Candle Sniper Settings</b>",
-        reply_markup=build_cs_settings(cfg, ents),
+        reply_markup=build_cs_settings(cfg),
         parse_mode="HTML",
-    )
-
-
-# ── Locked Feature ────────────────────────────────────────────────────────────
-
-@router.callback_query(F.data.startswith("cs:locked:"))
-async def cb_cs_locked(callback: CallbackQuery) -> None:
-    await callback.answer(
-        "👑 This feature requires SUPREME tier.\nBurn $BRAINROT to unlock!",
-        show_alert=True,
     )
 
 
@@ -454,11 +411,9 @@ async def cb_cs_locked(callback: CallbackQuery) -> None:
 async def cb_cs_candidates(callback: CallbackQuery) -> None:
     user_id = callback.from_user.id
     cfg     = await get_cs_settings(user_id)
-    tier    = await get_active_tier(user_id)
-    ents    = get_cs_entitlements(tier)
     profile = cfg.get("strategy_profile", "balanced")
 
-    candidates = await get_top_candidates(profile, limit=ents.max_candidates)
+    candidates = await get_top_candidates(profile, limit=CANDIDATE_DISPLAY_LIMIT)
     watchlist  = await get_user_watchlist(user_id)
     watchlist_addrs = {e["token_address"] for e in watchlist}
     await callback.answer()
@@ -472,7 +427,7 @@ async def cb_cs_candidates(callback: CallbackQuery) -> None:
         )
     else:
         lines = [f"🔍 <b>Candle Sniper Candidates</b> ({profile.title()} profile)\n"]
-        for i, c in enumerate(candidates[:ents.max_candidates], 1):
+        for i, c in enumerate(candidates[:CANDIDATE_DISPLAY_LIMIT], 1):
             sym  = (c.get("token_symbol") or "???")[:8]
             addr = c.get("token_address", "")
             score = c.get("composite_score", 0)
@@ -491,7 +446,7 @@ async def cb_cs_candidates(callback: CallbackQuery) -> None:
     try:
         await callback.message.edit_text(
             text,
-            reply_markup=build_cs_candidates(candidates, watchlist_addrs, limit=ents.max_candidates),
+            reply_markup=build_cs_candidates(candidates, watchlist_addrs, limit=CANDIDATE_DISPLAY_LIMIT),
             parse_mode="HTML",
         )
     except Exception:
@@ -941,7 +896,6 @@ async def cb_cs_share_positions(callback: CallbackQuery) -> None:
         f"&text={quote(tweet)}"
     )
 
-    _BRAINROT_CA = settings.BRAINROT_MINT
 
     # Individual tap-to-copy address lines per position
     addr_lines = ""
@@ -957,9 +911,7 @@ async def cb_cs_share_positions(callback: CallbackQuery) -> None:
         f"📣 <b>Share Your Candle Sniper Positions</b>\n"
         f"{'━' * 30}\n\n"
         + (f"<b>Position CAs:</b>\n{addr_lines}\n" if addr_lines else "No open positions.\n\n")
-        + f"<b>$BRAINROT CA:</b>\n"
-        f"<pre>{_BRAINROT_CA}</pre>\n"
-        f"<b>X / Twitter (tap to copy):</b>\n"
+        + f"<b>X / Twitter (tap to copy):</b>\n"
         f"<code>{tweet}</code>\n\n"
         f"<b>TikTok / Instagram caption:</b>\n"
         f"<code>{tiktok_ig}</code>\n\n"
@@ -1071,7 +1023,6 @@ async def cb_cs_share_stats(callback: CallbackQuery) -> None:
         f"&text={quote(tweet)}"
     )
 
-    _BRAINROT_CA = settings.BRAINROT_MINT
 
     # Individual tap-to-copy address lines
     addr_lines = ""
@@ -1093,9 +1044,7 @@ async def cb_cs_share_stats(callback: CallbackQuery) -> None:
         f"📈 Open: <b>{len(positions)}</b>  ·  Avg PnL: <b>{avg_pnl_str}</b>\n"
         f"⏱ Last scan: <b>{last_scan}</b>\n\n"
         + (f"<b>Open position CAs</b>:\n{addr_lines}\n" if addr_lines else "")
-        + f"<b>$BRAINROT CA:</b>\n"
-        f"<pre>{_BRAINROT_CA}</pre>\n"
-        f"<b>X / Twitter post (tap to copy):</b>\n"
+        + f"<b>X / Twitter post (tap to copy):</b>\n"
         f"<code>{tweet}</code>\n\n"
         f"<b>TikTok / Instagram caption:</b>\n"
         f"<code>{tiktok_ig}</code>\n\n"

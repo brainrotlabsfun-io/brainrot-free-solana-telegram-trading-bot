@@ -32,7 +32,7 @@ def build_share_menu() -> InlineKeyboardMarkup:
     return builder.as_markup()
 
 
-def build_sniper_menu(is_black: bool = False) -> InlineKeyboardMarkup:
+def build_sniper_menu() -> InlineKeyboardMarkup:
     builder = InlineKeyboardBuilder()
     # ── Row 1: Wallet (full width, top) ───────────────────────────────────────
     builder.row(
@@ -60,10 +60,6 @@ def build_sniper_menu(is_black: bool = False) -> InlineKeyboardMarkup:
     builder.row(
         InlineKeyboardButton(text="⬛  AUTO-EXIT MANAGER  ⬛",  callback_data="ae:main"),
     )
-    # ── Row 7: Supreme Access (full width) ────────────────────────────────────
-    builder.row(
-        InlineKeyboardButton(text="👑 SUPREME ACCESS",             callback_data="sniper:supreme"),
-    )
     builder.row(
         InlineKeyboardButton(text="⬅️  BACK",                   callback_data="menu:back"),
     )
@@ -90,7 +86,7 @@ def build_token_actions(token_address: str, cache_key: str) -> InlineKeyboardMar
     return builder.as_markup()
 
 
-def build_settings_menu(s: dict, is_supreme: bool) -> InlineKeyboardMarkup:
+def build_settings_menu(s: dict) -> InlineKeyboardMarkup:
     """Settings page with edit buttons for each key field."""
     builder = InlineKeyboardBuilder()
     builder.row(
@@ -117,30 +113,25 @@ def build_settings_menu(s: dict, is_supreme: bool) -> InlineKeyboardMarkup:
     builder.row(
         InlineKeyboardButton(text=f"{sm_icon} STRICT MODE", callback_data="sniper:toggle:strict_mode"),
     )
-    if is_supreme:
-        af_icon  = "✅" if s.get("auto_filter_enabled") else "⬜"
-        fl_icon  = "✅" if s.get("prioritize_fresh_launches") else "⬜"
-        ls_icon  = "✅" if s.get("prioritize_liquidity_strength") else "⬜"
-        ia_icon  = "✅" if s.get("instant_alert_on_match") else "⬜"
-        builder.row(
-            InlineKeyboardButton(text=f"{af_icon} AUTO FILTER",     callback_data="sniper:toggle:auto_filter_enabled"),
-            InlineKeyboardButton(text=f"{fl_icon} FRESH PRIORITY",  callback_data="sniper:toggle:prioritize_fresh_launches"),
-        )
-        builder.row(
-            InlineKeyboardButton(text=f"{ls_icon} LIQ PRIORITY",    callback_data="sniper:toggle:prioritize_liquidity_strength"),
-            InlineKeyboardButton(text=f"{ia_icon} INSTANT ALERT",   callback_data="sniper:toggle:instant_alert_on_match"),
-        )
-    else:
-        builder.row(
-            InlineKeyboardButton(text="🔒 SUPREME SETTINGS", callback_data="sniper:supreme"),
-        )
+    af_icon  = "✅" if s.get("auto_filter_enabled") else "⬜"
+    fl_icon  = "✅" if s.get("prioritize_fresh_launches") else "⬜"
+    ls_icon  = "✅" if s.get("prioritize_liquidity_strength") else "⬜"
+    ia_icon  = "✅" if s.get("instant_alert_on_match") else "⬜"
+    builder.row(
+        InlineKeyboardButton(text=f"{af_icon} AUTO FILTER",     callback_data="sniper:toggle:auto_filter_enabled"),
+        InlineKeyboardButton(text=f"{fl_icon} FRESH PRIORITY",  callback_data="sniper:toggle:prioritize_fresh_launches"),
+    )
+    builder.row(
+        InlineKeyboardButton(text=f"{ls_icon} LIQ PRIORITY",    callback_data="sniper:toggle:prioritize_liquidity_strength"),
+        InlineKeyboardButton(text=f"{ia_icon} INSTANT ALERT",   callback_data="sniper:toggle:instant_alert_on_match"),
+    )
     builder.row(InlineKeyboardButton(text="⬅️  BACK", callback_data="sniper:main"))
     return builder.as_markup()
 
 
 _TWITTER_HASHTAG_URL = "https://x.com/hashtag/BRAINROTALPHABOTPRESET"
 
-def build_presets_list(presets: list[dict], is_supreme: bool) -> InlineKeyboardMarkup:
+def build_presets_list(presets: list[dict]) -> InlineKeyboardMarkup:
     builder = InlineKeyboardBuilder()
     for p in presets:
         name  = p['name'].upper()[:18]
@@ -203,7 +194,7 @@ def build_watch_list(targets: list[dict]) -> InlineKeyboardMarkup:
     return builder.as_markup()
 
 
-def build_watch_targets_main(targets: list[dict], limit: int) -> InlineKeyboardMarkup:
+def build_watch_targets_main(targets: list[dict]) -> InlineKeyboardMarkup:
     """Remastered Watch Targets hub — terminal aesthetic with per-token detail rows."""
     builder = InlineKeyboardBuilder()
     for t in targets[:20]:
@@ -218,17 +209,9 @@ def build_watch_targets_main(targets: list[dict], limit: int) -> InlineKeyboardM
                 callback_data=f"sniper:wt_detail:{t['id']}",
             )
         )
-    if len(targets) < limit:
-        builder.row(
-            InlineKeyboardButton(text="➕ ADD TOKEN CA", callback_data="sniper:watch_add_manual"),
-        )
-    else:
-        builder.row(
-            InlineKeyboardButton(
-                text=f"🔒 LIMIT REACHED ({limit}) — UPGRADE SUPREME",
-                callback_data="sniper:supreme",
-            )
-        )
+    builder.row(
+        InlineKeyboardButton(text="➕ ADD TOKEN CA", callback_data="sniper:watch_add_manual"),
+    )
     builder.row(InlineKeyboardButton(text="⬅️  BACK", callback_data="sniper:main"))
     return builder.as_markup()
 
@@ -300,7 +283,7 @@ def build_feed_nav(has_results: bool) -> InlineKeyboardMarkup:
     return builder.as_markup()
 
 
-def build_autobuy_menu(s: dict, is_supreme: bool) -> InlineKeyboardMarkup:
+def build_autobuy_menu(s: dict) -> InlineKeyboardMarkup:
     from utils.trade_presets import TRADE_PRESETS
     builder = InlineKeyboardBuilder()
     enabled_icon = "🟢 ON" if s.get("enabled") else "🔴 OFF"
@@ -357,7 +340,7 @@ def build_cancel_sniper() -> InlineKeyboardMarkup:
 
 
 def build_liq_sniper_menu(ab_s: dict, exit_preset_name: str = "None") -> InlineKeyboardMarkup:
-    """Liquidity Sniper control panel — Supreme Black only."""
+    """Liquidity Sniper control panel."""
     builder = InlineKeyboardBuilder()
     enabled_icon = "🟢 ON" if ab_s.get("enabled") and float(ab_s.get("min_initial_buy_sol") or 0) > 0 else "🔴 OFF"
     ks_icon      = "🔴 ACTIVE" if ab_s.get("kill_switch") else "⬜ OFF"

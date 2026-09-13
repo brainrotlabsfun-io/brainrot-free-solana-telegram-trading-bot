@@ -68,8 +68,8 @@ hidden `.txt` extension.
 
 **6. First run**
 `python main.py`. Read the logs together. Explain that warnings about
-unconfigured optional features (payments, token gating, branding) are
-expected and mean those features are simply off. Have them message their bot
+unconfigured optional branding are expected and just mean those buttons are
+hidden. Every trading feature is available with no tiers or paywalls. Have them message their bot
 and send `/start` to confirm it replies. Then `Ctrl+C`.
 
 **7. Admin access**
@@ -84,10 +84,9 @@ Mention `SOLANA_RPC_URLS` for rotating several endpoints.
 
 **9. Wrap up**
 Show them how to start and stop the bot. Point at `DEPLOY.md` for running it
-24/7, and at `.env.example` for the optional settings they may want later —
-branding, their own token mint, payments. Remind them that `.env` and `*.db`
-must never be committed, and that `PAYMENT_WALLET` must be an address they
-control.
+24/7, and at `.env.example` for the optional branding settings they may want
+later. Remind them that `.env` and `*.db` must never be committed, and that
+everyone who can message their bot gets full access to every feature.
 
 ---
 

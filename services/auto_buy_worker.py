@@ -428,14 +428,12 @@ async def _maybe_buy_active(bot: Bot, user_id: int, addr: str, token_data: dict)
         log_auto_buy_job, update_job_status,
     )
     from services.sniper_settings_service import get_settings
-    from services.brainrot_token_gate import get_entitlements
     from services.sniper_blacklist_service import get_blacklist_addresses
     from services.bot_wallet_service import get_or_create_bot_wallet, get_sol_balance
     from services.sniper_score_service import score_token
     from services.solana_execution_service import execute_buy
 
     ab   = await get_auto_buy_settings(user_id)
-    ents = await get_entitlements(user_id)
     s    = await get_settings(user_id)
 
     if not ab.get("enabled") or ab.get("kill_switch"):
@@ -453,7 +451,7 @@ async def _maybe_buy_active(bot: Bot, user_id: int, addr: str, token_data: dict)
 
     # Rate limit
     buys_this_hour = await count_buys_last_hour(user_id)
-    max_per_hour   = min(int(ab.get("max_buys_per_hour") or 5), ents.max_buys_per_hour_limit)
+    max_per_hour   = int(ab.get("max_buys_per_hour") or 5)
     if buys_this_hour >= max_per_hour:
         return
 
@@ -482,7 +480,7 @@ async def _maybe_buy_active(bot: Bot, user_id: int, addr: str, token_data: dict)
     if is_smart:
         settings_for_score["strategy_mode"] = "smart_project"
 
-    score_result = score_token(token_data, settings_for_score, ents)
+    score_result = score_token(token_data, settings_for_score)
     score        = score_result["score"]
 
     sym = token_data.get("symbol") or addr[:6]
@@ -498,7 +496,7 @@ async def _maybe_buy_active(bot: Bot, user_id: int, addr: str, token_data: dict)
         return
 
     # Buy size + fees
-    buy_size = min(float(ab.get("max_buy_size_sol") or 0.05), ents.max_buy_size_limit_sol)
+    buy_size = float(ab.get("max_buy_size_sol") or 0.05)
     if buy_size <= 0:
         return
 
@@ -645,14 +643,12 @@ async def _maybe_buy(bot: Bot, user_id: int, addr: str, raw_token: dict) -> None
         log_auto_buy_job, update_job_status,
     )
     from services.sniper_settings_service import get_settings
-    from services.brainrot_token_gate import get_entitlements
     from services.sniper_blacklist_service import get_blacklist_addresses
     from services.bot_wallet_service import get_or_create_bot_wallet, get_sol_balance
     from services.sniper_score_service import score_token
     from services.solana_execution_service import execute_buy
 
     ab   = await get_auto_buy_settings(user_id)
-    ents = await get_entitlements(user_id)
     s    = await get_settings(user_id)
 
     # ── Gates ─────────────────────────────────────────────────────────────────
@@ -729,7 +725,7 @@ async def _maybe_buy(bot: Bot, user_id: int, addr: str, raw_token: dict) -> None
     liq_exit_preset_id = int(ab.get("liq_exit_preset_id") or 0) or None
 
     buys_this_hour = await count_buys_last_hour(user_id)
-    max_per_hour   = min(int(ab.get("max_buys_per_hour") or 3), ents.max_buys_per_hour_limit)
+    max_per_hour   = int(ab.get("max_buys_per_hour") or 3)
     if buys_this_hour >= max_per_hour:
         return
 
@@ -761,7 +757,7 @@ async def _maybe_buy(bot: Bot, user_id: int, addr: str, raw_token: dict) -> None
         return
 
     # ── Score ─────────────────────────────────────────────────────────────────
-    score_result = score_token(token_data, s, ents)
+    score_result = score_token(token_data, s)
     score        = score_result["score"]
     logger.info(
         f"Auto-buy eval user={user_id} token={raw_token.get('symbol', addr[:8])} "
@@ -778,7 +774,7 @@ async def _maybe_buy(bot: Bot, user_id: int, addr: str, raw_token: dict) -> None
         return
 
     # ── Buy size + execution params ───────────────────────────────────────────
-    buy_size = min(float(ab.get("max_buy_size_sol") or 0.01), ents.max_buy_size_limit_sol)
+    buy_size = float(ab.get("max_buy_size_sol") or 0.01)
     if buy_size <= 0:
         return
     platform = s.get("preferred_platform") or "auto"

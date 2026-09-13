@@ -171,15 +171,19 @@ async def get_new_launches(limit: int = 100) -> list[dict]:
         return []
 
 
+# How many scored candidates the launch feed shows. Page-size, not a paywall.
+FEED_RESULT_LIMIT = 25
+
+
 async def get_ranked_candidates_for_user(
     user_id: int,
     user_settings: dict,
     blacklist: list[str],
-    entitlements,
+    limit: int = FEED_RESULT_LIMIT,
 ) -> list[dict]:
     """
     Fetches new launches, applies user filters + blacklist, scores candidates.
-    Returns ranked list respecting tier feed_result_limit.
+    Returns the ranked list, capped at `limit` entries.
     """
     from services.sniper_score_service import score_token
 
@@ -205,7 +209,7 @@ async def get_ranked_candidates_for_user(
         if age is not None and age > max_age:
             continue
 
-        result = score_token(token, user_settings, entitlements)
+        result = score_token(token, user_settings)
         token["score"]      = result["score"]
         token["rating"]     = result["rating"]
         token["risk_notes"] = result["risk_notes"]
@@ -215,5 +219,4 @@ async def get_ranked_candidates_for_user(
         filtered.append(token)
 
     filtered.sort(key=lambda x: x.get("score", 0), reverse=True)
-    limit = entitlements.feed_result_limit
     return filtered[:limit]

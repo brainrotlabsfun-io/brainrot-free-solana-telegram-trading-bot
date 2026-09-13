@@ -8,7 +8,7 @@ Features:
   ws:toptraders  — Top traders on a specific token
   ws:earlybuyers — First wallets to buy a token
   ws:bundle      — Detect coordinated dev bundles at launch
-  ws:repeated    — Cross-token repeated winners (SUPREME+)
+  ws:repeated    — Cross-token repeated winners
   ws:feed        — GMGN token discovery feed
 
 All ws:* callbacks are handled here. Router is registered before callbacks.router.
@@ -45,40 +45,16 @@ def _short(addr: str) -> str:
     return addr[:6] + "..." + addr[-4:] if len(addr) > 12 else addr
 
 
-async def _get_ents(user_id: int):
-    from services.brainrot_token_gate import get_entitlements
-    return await get_entitlements(user_id)
-
-
 async def _render_main(user_id: int):
-    ents     = await _get_ents(user_id)
-    is_sup   = ents.has_supreme_access
-    is_black = ents.has_supreme_black
-    tier     = ents.tier
 
-    if tier == "supreme_black":
-        tier_label = "🔱 SUPREME BLACK"
-        tier_bar   = "▓▓▓▓▓▓▓▓▓▓ CLEARANCE: MAX"
-        tools_line = "All 6 intel tools unlocked."
-    elif tier == "supreme":
-        tier_label = "👑 SUPREME"
-        tier_bar   = "▓▓▓▓▓▓▓░░░ CLEARANCE: HIGH"
-        tools_line = "5 of 6 intel tools unlocked."
-    else:
-        tier_label = "🆓 FREE"
-        tier_bar   = "▓░░░░░░░░░ CLEARANCE: BASIC"
-        tools_line = "4 of 6 intel tools available."
-
-    cross_icon = "✅" if (is_sup or is_black) else "🔒"
     text = (
         f"🔭 <b>WALLET SCOUT</b>\n"
-        f"<code>{tier_bar}  {tier_label}</code>\n\n"
         f"<code>🔍 Score  🏆 Top Traders  ⏱ Early Buyers</code>\n"
-        f"<code>💣 Bundle  🔁 Cross-Token {cross_icon}  🌊 GMGN Feed</code>\n\n"
+        f"<code>💣 Bundle  🔁 Cross-Token  🌊 GMGN Feed</code>\n\n"
         f"<i>Powered by gmgn.ai smart-money data.</i>"
     )
 
-    kb = build_wallet_scout_main(is_sup, is_black)
+    kb = build_wallet_scout_main()
     return text, kb
 
 
@@ -404,14 +380,6 @@ async def _do_bundle(message: Message, contract: str):
 
 @router.callback_query(F.data == "ws:repeated")
 async def cb_ws_repeated(call: CallbackQuery, state: FSMContext):
-    ents = await _get_ents(call.from_user.id)
-    if not ents.has_supreme_access:
-        await call.answer(
-            "🔒 Cross-token winner analysis requires SUPREME or higher.",
-            show_alert=True,
-        )
-        return
-
     await state.set_state(WalletScoutStates.waiting_for_token_list)
     await call.message.edit_text(
         "🔁 <b>Cross-Token Repeated Winners</b>\n\n"
@@ -448,8 +416,7 @@ async def fsm_token_list(message: Message, state: FSMContext):
     )
 
     from services.gmgn_service import find_repeated_winners
-    ents = await _get_ents(message.from_user.id)
-    top_n = 30 if ents.has_supreme_black else 20
+    top_n = 30
 
     winners = await find_repeated_winners(contracts, min_appearances=2, top_n_per_token=top_n)
 
@@ -733,13 +700,12 @@ async def cb_ws_preset_run(call: CallbackQuery):
 async def cb_ws_add_to_ct(call: CallbackQuery):
     """Add a discovered wallet directly to copy trading from the scout panel."""
     wallet = call.data.split(":", 2)[2]
-    from services.copy_trade_service import add_tracked_wallet, get_copy_trade_entitlements
-    ents = await get_copy_trade_entitlements(call.from_user.id)
+    from services.copy_trade_service import add_tracked_wallet
 
     ok, err = await add_tracked_wallet(call.from_user.id, wallet, label="Scout find")
     if ok:
         await call.answer(
-            f"✅ Added to Copy Trade! ({ents.tier.replace('_',' ').title()} tier)",
+            "✅ Added to Copy Trade!",
             show_alert=True,
         )
     else:

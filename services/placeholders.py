@@ -28,19 +28,6 @@ def settings_page() -> str:
     )
 
 
-def premium_page() -> str:
-    return (
-        "👑 <b>Premium Module</b>\n"
-        "─────────────────────────\n\n"
-        "Premium tools will connect to the <b>$BRAINROT</b> ecosystem.\n"
-        "Holding $BRAINROT will unlock advanced utilities including "
-        "priority alerts, AI scoring, sniper access, and more.\n\n"
-        "Token Contract:\n"
-        f"<code>{settings.BRAINROT_MINT or 'not configured'}</code>\n\n"
-        "<i>Coming soon — premium tiers not yet active.</i>"
-    )
-
-
 def watchlist_page() -> str:
     return (
         "👁 <b>WATCHLIST  //  DASHBOARD</b>\n"

@@ -1,7 +1,7 @@
 """
 bot/handlers/auto_exit.py
 ==========================
-Supreme Black Auto-Exit Manager — Telegram handler.
+Auto-Exit Manager — Telegram handler.
 
 Sections:
   A. Main menu
@@ -33,7 +33,6 @@ from bot.keyboards.auto_exit_menu import (
     build_ae_settings,
     build_ae_cancel,
     build_back_to_ae,
-    BLUR,
 )
 
 logger = logging.getLogger(__name__)
@@ -49,11 +48,6 @@ class AEState(StatesGroup):
 
 # ── Helpers ────────────────────────────────────────────────────────────────────
 
-async def _is_black(user_id: int) -> bool:
-    from services.brainrot_token_gate import is_supreme_black
-    return await is_supreme_black(user_id)
-
-
 def _bar(pct: float, width: int = 12) -> str:
     """ASCII progress bar — pct is 0-100."""
     filled = int(round(pct / 100 * width))
@@ -61,12 +55,12 @@ def _bar(pct: float, width: int = 12) -> str:
     return "▓" * filled + "░" * (width - filled)
 
 
-def _fmt_preset(p: dict, is_black: bool) -> str:
-    """Format a preset for display — terminal/hacker style. Blur values if not Supreme Black."""
+def _fmt_preset(p: dict) -> str:
+    """Format a preset for display — terminal/hacker style."""
     def v(val, fmt=".0f"):
         if val is None:
             return "—"
-        return f"{val:{fmt}}" if is_black else BLUR
+        return f"{val:{fmt}}"
 
     name = p["name"]
     desc = p.get("description") or ""
@@ -94,10 +88,10 @@ def _fmt_preset(p: dict, is_black: bool) -> str:
         rows.append(f"  STOP-LOSS       {v(p['sl_pct']):>8}%")
     if p.get("trailing_stop_pct") is not None:
         tat = p.get("trailing_after_tp", 1)
-        rows.append(f"  TRAILING STOP   {v(p['trailing_stop_pct']):>8}%  after TP{tat if is_black else BLUR}")
+        rows.append(f"  TRAILING STOP   {v(p['trailing_stop_pct']):>8}%  after TP{tat}")
     bep = p.get("break_even_after_tp")
     if bep:
-        rows.append(f"  BREAK-EVEN      after TP{bep if is_black else BLUR}")
+        rows.append(f"  BREAK-EVEN      after TP{bep}")
     if p.get("moon_bag_pct"):
         rows.append(f"  MOON BAG        {v(p['moon_bag_pct']):>8}%")
     if p.get("max_hold_minutes"):
@@ -105,15 +99,10 @@ def _fmt_preset(p: dict, is_black: bool) -> str:
     if rows:
         lines.append("<code>RISK CONTROLS\n" + "\n".join(rows) + "</code>")
 
-    if not is_black:
-        lines.append(
-            "\n🖤 <b>Preset values locked — Supreme Black only</b>\n"
-            "<i>Upgrade to view, clone, and apply Black presets.</i>"
-        )
     return "\n".join(lines)
 
 
-def _fmt_position_state(ps: dict, is_black: bool) -> str:
+def _fmt_position_state(ps: dict) -> str:
     token    = ps["token_address"]
     entry    = float(ps.get("entry_price_sol") or 0)
     current  = float(ps.get("current_price_sol") or 0)
@@ -157,7 +146,6 @@ def _fmt_position_state(ps: dict, is_black: bool) -> str:
 async def cb_ae_main(callback: CallbackQuery) -> None:
     from services.auto_exit_service import get_auto_exit_settings, get_preset, get_active_position_states
     user_id  = callback.from_user.id
-    is_black = await _is_black(user_id)
     s        = await get_auto_exit_settings(user_id)
 
     # ── Boot animation ─────────────────────────────────────────────────────────
@@ -190,14 +178,12 @@ async def cb_ae_main(callback: CallbackQuery) -> None:
 
     power_s  = "ACTIVE  ✅" if s.get("enabled") else "OFFLINE ❌"
     mode_s   = "🔴 LIVE " if s.get("live_mode") else "📄 PAPER"
-    tier_s   = "🖤 SUPREME BLACK" if is_black else "🔒 LOCKED"
 
     status_block = (
         f"<code>"
         f"╔══════════════════════════════╗\n"
         f"║   🖤 AUTO-EXIT TERMINAL      ║\n"
         f"╚══════════════════════════════╝\n"
-        f"TIER     {tier_s}\n"
         f"POWER    {power_s}\n"
         f"MODE     {mode_s}\n"
         f"PRESET   {preset_name[:26]}\n"
@@ -207,20 +193,14 @@ async def cb_ae_main(callback: CallbackQuery) -> None:
         f"</code>"
     )
 
-    if not is_black:
-        status_block += (
-            "\n🖤 <b>Supreme Black Required</b>\n"
-            "<i>Upgrade to unlock auto TP/SL, trailing stops, and preset cloning.</i>"
-        )
-    else:
-        status_block += (
-            "\n<i>📡 Monitoring positions automatically.\n"
-            "Select a preset then enable power to activate.</i>"
-        )
+    status_block += (
+        "\n<i>📡 Monitoring positions automatically.\n"
+        "Select a preset then enable power to activate.</i>"
+    )
 
     try:
         await callback.message.edit_text(
-            status_block, reply_markup=build_auto_exit_main(s, is_black), parse_mode="HTML"
+            status_block, reply_markup=build_auto_exit_main(s), parse_mode="HTML"
         )
     except TelegramBadRequest:
         pass
@@ -232,9 +212,6 @@ async def cb_ae_main(callback: CallbackQuery) -> None:
 @router.callback_query(F.data == "ae:toggle")
 async def cb_ae_toggle(callback: CallbackQuery) -> None:
     from services.auto_exit_service import toggle_auto_exit
-    if not await _is_black(callback.from_user.id):
-        await callback.answer("🔒 Supreme Black required.", show_alert=True)
-        return
     new = await toggle_auto_exit(callback.from_user.id)
     # Answer BEFORE editing — prevents Telegram's "loading" spinner from blocking the edit
     await callback.answer(f"Auto-Exit {'ONLINE ✅' if new else 'OFFLINE 🔴'}.", show_alert=True)
@@ -252,9 +229,6 @@ async def cb_ae_toggle(callback: CallbackQuery) -> None:
 @router.callback_query(F.data == "ae:live_toggle")
 async def cb_ae_live_toggle(callback: CallbackQuery) -> None:
     from services.auto_exit_service import toggle_live_mode
-    if not await _is_black(callback.from_user.id):
-        await callback.answer("🔒 Supreme Black required.", show_alert=True)
-        return
     live = await toggle_live_mode(callback.from_user.id)
     await callback.answer(f"Mode: {'🔴 LIVE — real sells enabled' if live else '📄 PAPER — simulating only'}", show_alert=True)
     try:
@@ -272,17 +246,15 @@ async def cb_ae_live_toggle(callback: CallbackQuery) -> None:
 @router.callback_query(F.data == "ae:sys_presets")
 async def cb_sys_presets(callback: CallbackQuery) -> None:
     from services.auto_exit_service import get_system_presets
-    is_black = await _is_black(callback.from_user.id)
     presets  = await get_system_presets()
     text = (
         "<code>╔══════════════════════════════╗\n"
-        "║   ⭐ BLACK PRESETS           ║\n"
+        "║   ⭐ BUILT-IN PRESETS        ║\n"
         "╚══════════════════════════════╝</code>\n\n"
-        + ("Select a preset to view its strategy.\n" if is_black else
-           "🖤 <b>Values hidden.</b> Upgrade to Supreme Black to view and clone presets.\n")
+        + "Select a preset to view its strategy.\n"
     )
     try:
-        await callback.message.edit_text(text, reply_markup=build_sys_presets(presets, is_black), parse_mode="HTML")
+        await callback.message.edit_text(text, reply_markup=build_sys_presets(presets), parse_mode="HTML")
     except TelegramBadRequest:
         pass
     await callback.answer()
@@ -291,7 +263,6 @@ async def cb_sys_presets(callback: CallbackQuery) -> None:
 @router.callback_query(F.data.startswith("ae:view_preset:"))
 async def cb_view_preset(callback: CallbackQuery) -> None:
     from services.auto_exit_service import get_preset
-    is_black  = await _is_black(callback.from_user.id)
     preset_id = int(callback.data.split("ae:view_preset:")[-1])
     preset    = await get_preset(preset_id)
     if not preset:
@@ -299,8 +270,8 @@ async def cb_view_preset(callback: CallbackQuery) -> None:
         return
     is_system = bool(preset.get("is_system"))
     await callback.message.edit_text(
-        _fmt_preset(preset, is_black),
-        reply_markup=build_preset_view(preset, is_black, is_system),
+        _fmt_preset(preset),
+        reply_markup=build_preset_view(preset, is_system),
         parse_mode="HTML",
     )
     await callback.answer()
@@ -309,9 +280,6 @@ async def cb_view_preset(callback: CallbackQuery) -> None:
 @router.callback_query(F.data.startswith("ae:apply_preset:"))
 async def cb_apply_preset(callback: CallbackQuery) -> None:
     from services.auto_exit_service import update_auto_exit_field, get_preset
-    if not await _is_black(callback.from_user.id):
-        await callback.answer("🔒 Supreme Black required.", show_alert=True)
-        return
     preset_id = int(callback.data.split("ae:apply_preset:")[-1])
     # Applying a preset implies the user wants auto-exit ON — enable it together.
     await asyncio.gather(
@@ -326,9 +294,6 @@ async def cb_apply_preset(callback: CallbackQuery) -> None:
 
 @router.callback_query(F.data.startswith("ae:clone_preset:"))
 async def cb_clone_preset_start(callback: CallbackQuery, state: FSMContext) -> None:
-    if not await _is_black(callback.from_user.id):
-        await callback.answer("🔒 Supreme Black required.", show_alert=True)
-        return
     preset_id = int(callback.data.split("ae:clone_preset:")[-1])
     await state.set_state(AEState.clone_name)
     await state.update_data(clone_src=preset_id)
@@ -371,7 +336,6 @@ async def fsm_clone_name(message: Message, state: FSMContext) -> None:
 @router.callback_query(F.data == "ae:presets")
 async def cb_user_presets(callback: CallbackQuery) -> None:
     from services.auto_exit_service import get_user_presets
-    is_black = await _is_black(callback.from_user.id)
     presets  = await get_user_presets(callback.from_user.id)
     text = (
         "<code>╔══════════════════════════════╗\n"
@@ -381,7 +345,7 @@ async def cb_user_presets(callback: CallbackQuery) -> None:
            if not presets else f"{len(presets)} custom preset(s) saved.\n")
     )
     try:
-        await callback.message.edit_text(text, reply_markup=build_user_presets(presets, is_black), parse_mode="HTML")
+        await callback.message.edit_text(text, reply_markup=build_user_presets(presets), parse_mode="HTML")
     except TelegramBadRequest:
         pass
     await callback.answer()
@@ -406,7 +370,6 @@ async def cb_ae_positions(callback: CallbackQuery) -> None:
     from services.auto_buy_service import get_auto_buy_settings
     from services.sniper_settings_service import get_settings as get_sniper_settings
 
-    is_black = await _is_black(callback.from_user.id)
     user_id  = callback.from_user.id
 
     all_ps, ae_s, ab_s, sniper_s = await asyncio.gather(
@@ -480,7 +443,7 @@ async def cb_ae_positions(callback: CallbackQuery) -> None:
     try:
         await callback.message.edit_text(
             quick_block + pos_block,
-            reply_markup=build_ae_positions_full(user_ps, ae_s, ab_s, is_black),
+            reply_markup=build_ae_positions_full(user_ps, ae_s, ab_s),
             disable_web_page_preview=True,
             parse_mode="HTML",
         )
@@ -492,7 +455,6 @@ async def cb_ae_positions(callback: CallbackQuery) -> None:
 @router.callback_query(F.data.startswith("ae:pos_detail:"))
 async def cb_pos_detail(callback: CallbackQuery) -> None:
     from services.auto_exit_service import get_active_position_states
-    is_black = await _is_black(callback.from_user.id)
     pos_id   = int(callback.data.split("ae:pos_detail:")[-1])
     all_ps   = await get_active_position_states()
     ps       = next((p for p in all_ps if p["position_id"] == pos_id), None)
@@ -506,8 +468,8 @@ async def cb_pos_detail(callback: CallbackQuery) -> None:
             f"<code>╔══════════════════════════════╗\n"
             f"║   📍 POSITION DETAIL         ║\n"
             f"╚══════════════════════════════╝</code>\n\n"
-            + _fmt_position_state(ps, is_black),
-            reply_markup=build_pos_detail(ps, is_black),
+            + _fmt_position_state(ps),
+            reply_markup=build_pos_detail(ps),
             parse_mode="HTML",
         )
     except TelegramBadRequest:
@@ -518,9 +480,6 @@ async def cb_pos_detail(callback: CallbackQuery) -> None:
 @router.callback_query(F.data.startswith("ae:pos_stop:"))
 async def cb_pos_stop(callback: CallbackQuery) -> None:
     from services.auto_exit_service import mark_position_closed
-    if not await _is_black(callback.from_user.id):
-        await callback.answer("🔒 Supreme Black required.", show_alert=True)
-        return
     pos_id = int(callback.data.split("ae:pos_stop:")[-1])
     await mark_position_closed(pos_id)
     await callback.answer("⏹ Stopped watching position.", show_alert=True)
@@ -531,9 +490,6 @@ async def cb_pos_stop(callback: CallbackQuery) -> None:
 async def cb_pos_preset(callback: CallbackQuery) -> None:
     """Let user pick which preset to apply to a specific position."""
     from services.auto_exit_service import get_system_presets, get_user_presets
-    if not await _is_black(callback.from_user.id):
-        await callback.answer("🔒 Supreme Black required.", show_alert=True)
-        return
     pos_id   = int(callback.data.split("ae:pos_preset:")[-1])
     sys_p    = await get_system_presets()
     user_p   = await get_user_presets(callback.from_user.id)
@@ -588,9 +544,6 @@ async def cb_ae_noop(callback: CallbackQuery) -> None:
 async def cb_quick_preset(callback: CallbackQuery) -> None:
     """Apply a system preset by index directly from the positions page."""
     from services.auto_exit_service import get_system_presets, update_auto_exit_field
-    if not await _is_black(callback.from_user.id):
-        await callback.answer("🔒 Supreme Black required.", show_alert=True)
-        return
     idx = int(callback.data.split("ae:quick_preset:")[-1])
     presets = await get_system_presets()
     if idx >= len(presets):
@@ -610,9 +563,6 @@ async def cb_quick_preset(callback: CallbackQuery) -> None:
 async def cb_pick_exit_preset(callback: CallbackQuery) -> None:
     """Show all available presets so the user can pick one as the global exit preset."""
     from services.auto_exit_service import get_system_presets, get_user_presets, get_auto_exit_settings
-    if not await _is_black(callback.from_user.id):
-        await callback.answer("🔒 Supreme Black required.", show_alert=True)
-        return
 
     sys_p, user_p, ae_s = await asyncio.gather(
         get_system_presets(),
@@ -657,9 +607,6 @@ async def cb_manual_sell(callback: CallbackQuery) -> None:
     )
     from services.solana_execution_service import execute_sell
 
-    if not await _is_black(callback.from_user.id):
-        await callback.answer("🔒 Supreme Black required.", show_alert=True)
-        return
 
     parts    = callback.data.split(":")
     pos_id   = int(parts[2])
@@ -739,9 +686,6 @@ async def cb_ae_settings(callback: CallbackQuery) -> None:
 
 @router.callback_query(F.data.startswith("ae:set:"))
 async def cb_ae_set_field(callback: CallbackQuery, state: FSMContext) -> None:
-    if not await _is_black(callback.from_user.id):
-        await callback.answer("🔒 Supreme Black required.", show_alert=True)
-        return
     field = callback.data.split("ae:set:")[-1]
     labels = {
         "custom_slippage":     "Slippage (%)",
@@ -799,14 +743,6 @@ async def fsm_ae_edit_field(message: Message, state: FSMContext) -> None:
         except ValueError:
             await message.answer("<code>❌ Invalid — enter a number.</code>", reply_markup=build_ae_cancel(), parse_mode="HTML")
             return
-        from services.brainrot_token_gate import get_entitlements
-        ents = await get_entitlements(message.from_user.id)
-        if real_field == "max_buy_size_sol" and value > ents.max_buy_size_limit_sol:
-            await message.answer(f"<code>❌ Tier limit is {ents.max_buy_size_limit_sol} SOL.</code>", reply_markup=build_ae_cancel(), parse_mode="HTML")
-            return
-        if real_field == "max_buys_per_hour" and value > ents.max_buys_per_hour_limit:
-            await message.answer(f"<code>❌ Tier limit is {ents.max_buys_per_hour_limit}/hr.</code>", reply_markup=build_ae_cancel(), parse_mode="HTML")
-            return
         await state.clear()
         await update_auto_buy_field(message.from_user.id, real_field, value)
         import services.auto_buy_worker as _worker
@@ -860,28 +796,6 @@ async def fsm_ae_edit_field(message: Message, state: FSMContext) -> None:
     await message.answer(
         f"<code>✅ SAVED\n──────────────\n{field} = {value}</code>",
         reply_markup=_back_kb(),
-        parse_mode="HTML",
-    )
-
-
-# ── H. Upgrade CTA ─────────────────────────────────────────────────────────────
-
-@router.callback_query(F.data == "ae:upgrade_cta")
-async def cb_upgrade_cta(callback: CallbackQuery) -> None:
-    await callback.answer()
-    await callback.message.answer(
-        "<code>╔══════════════════════════════╗\n"
-        "║   🖤 SUPREME BLACK           ║\n"
-        "╚══════════════════════════════╝\n"
-        "UNLOCKS:\n"
-        "  ✅ Auto-Exit Manager\n"
-        "  ✅ TP / SL / Trailing stops\n"
-        "  ✅ Supreme Black presets\n"
-        "  ✅ Per-position preset override\n"
-        "  ✅ Manual sell controls\n"
-        "  ✅ Paper mode simulation\n"
-        "──────────────────────────────\n"
-        "Contact an admin to upgrade.</code>",
         parse_mode="HTML",
     )
 

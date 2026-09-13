@@ -10,8 +10,6 @@ Commands:
   /close_raid <id>        — force-close any active raid
   /feature_raid <id>      — toggle featured flag
   /raid_stats             — hub-wide statistics
-  /grant_premium <user_id> — grant premium access
-  /revoke_premium <user_id> — revoke premium access
 """
 
 import logging
@@ -28,11 +26,6 @@ from services.raid_hub_service import (
     close_hub_raid,
     toggle_feature_hub_raid,
     get_hub_raid_stats,
-)
-from services.premium_service import (
-    grant_premium,
-    revoke_premium,
-    get_all_premium_users,
 )
 
 router = Router()
@@ -179,57 +172,3 @@ async def cmd_raid_stats(message: Message) -> None:
         f"Registered Users:  {s['total_users']}"
     )
 
-
-# ── /grant_premium <user_id> ───────────────────────────────────────────────────
-@router.message(Command("grant_premium"))
-async def cmd_grant_premium(message: Message) -> None:
-    if not _admin_only(message):
-        await message.answer("Admin only.")
-        return
-
-    user_id = _parse_id(message, "grant_premium")
-    if user_id is None:
-        await message.answer("Usage: /grant_premium <telegram_user_id>")
-        return
-
-    await grant_premium(user_id, entitlement_type="manual")
-    await message.answer(f"👑 Premium granted to user {user_id}.")
-
-
-# ── /revoke_premium <user_id> ──────────────────────────────────────────────────
-@router.message(Command("revoke_premium"))
-async def cmd_revoke_premium(message: Message) -> None:
-    if not _admin_only(message):
-        await message.answer("Admin only.")
-        return
-
-    user_id = _parse_id(message, "revoke_premium")
-    if user_id is None:
-        await message.answer("Usage: /revoke_premium <telegram_user_id>")
-        return
-
-    success = await revoke_premium(user_id)
-    if success:
-        await message.answer(f"Premium revoked for user {user_id}.")
-    else:
-        await message.answer(f"User {user_id} had no active premium.")
-
-
-# ── /premium_list ──────────────────────────────────────────────────────────────
-@router.message(Command("premium_list"))
-async def cmd_premium_list(message: Message) -> None:
-    if not _admin_only(message):
-        await message.answer("Admin only.")
-        return
-
-    users = await get_all_premium_users()
-    if not users:
-        await message.answer("No premium users currently active.")
-        return
-
-    lines = ["👑 <b>Active Premium Users</b>\n"]
-    for u in users:
-        name = u.get("username") or u.get("first_name") or f"User{u['user_id']}"
-        lines.append(f"• @{name} (ID: {u['user_id']}) — {u['entitlement_type']}")
-
-    await message.answer("\n".join(lines))

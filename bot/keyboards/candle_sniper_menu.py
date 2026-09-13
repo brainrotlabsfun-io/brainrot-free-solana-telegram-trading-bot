@@ -35,7 +35,7 @@ def build_cs_share_menu() -> InlineKeyboardMarkup:
 
 # ── Main Menu ─────────────────────────────────────────────────────────────────
 
-def build_cs_main(cfg: dict, tier: str, ents) -> InlineKeyboardMarkup:
+def build_cs_main(cfg: dict) -> InlineKeyboardMarkup:
     """Main Candle Sniper menu with status-aware toggle button."""
     builder  = InlineKeyboardBuilder()
     enabled  = bool(cfg.get("enabled"))
@@ -60,7 +60,6 @@ def build_cs_main(cfg: dict, tier: str, ents) -> InlineKeyboardMarkup:
         InlineKeyboardButton(text="📋 ENTER CONTRACT ADDRESS", callback_data="cs:enter_contract"),
     )
 
-    builder.row(InlineKeyboardButton(text="👑 SUPREME ACCESS", callback_data="supreme:main"))
     builder.row(InlineKeyboardButton(text="🌐  SHARE TO COMMUNITY", callback_data="cs:share_menu"))
     builder.row(InlineKeyboardButton(text="⬅️ BACK TO MENU", callback_data="menu:back"))
     return builder.as_markup()
@@ -89,7 +88,7 @@ def build_cs_profile_menu(current: str) -> InlineKeyboardMarkup:
 
 # ── Settings Menu ─────────────────────────────────────────────────────────────
 
-def build_cs_settings(cfg: dict, ents) -> InlineKeyboardMarkup:
+def build_cs_settings(cfg: dict) -> InlineKeyboardMarkup:
     builder = InlineKeyboardBuilder()
 
     def _fmt(key):
@@ -123,16 +122,10 @@ def build_cs_settings(cfg: dict, ents) -> InlineKeyboardMarkup:
         InlineKeyboardButton(text=f"✅ MIN SIGNALS: {_fmt('min_confirmations')}/9",
                              callback_data="cs:set_field:min_confirmations"),
     )
-    if ents.can_trailing_stop:
-        builder.row(InlineKeyboardButton(
-            text=f"📉 TRAILING STOP: {_fmt('trailing_stop_pct')}%",
-            callback_data="cs:set_field:trailing_stop_pct",
-        ))
-    else:
-        builder.row(InlineKeyboardButton(
-            text="📉 TRAILING STOP: 👑 SUPREME ONLY",
-            callback_data="cs:locked:trailing_stop",
-        ))
+    builder.row(InlineKeyboardButton(
+        text=f"📉 TRAILING STOP: {_fmt('trailing_stop_pct')}%",
+        callback_data="cs:set_field:trailing_stop_pct",
+    ))
     builder.row(
         InlineKeyboardButton(
             text=f"♻️ RESTORE ON EXIT: {'ON' if cfg.get('restore_previous_config') else 'OFF'}",

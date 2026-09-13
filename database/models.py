@@ -20,15 +20,14 @@ from datetime import datetime
 class User:
     """
     Represents a Telegram user who has interacted with the bot.
-    Future fields: premium_tier, joined_at, referral_code, etc.
+    Future fields: joined_at, etc.
     """
     telegram_id: int
     username: Optional[str] = None
     first_name: Optional[str] = None
-    is_premium: bool = False
     created_at: datetime = field(default_factory=datetime.utcnow)
 
-    # Future: premium tier, $BRAINROT token balance snapshot, etc.
+    # Future: token balance snapshot, etc.
 
 
 @dataclass

@@ -1,7 +1,7 @@
 """
 services/auto_exit_service.py
 ==============================
-Supreme Black Auto-Exit Manager — core service layer.
+Auto-Exit Manager — core service layer.
 
 Responsibilities:
   - System preset seeding

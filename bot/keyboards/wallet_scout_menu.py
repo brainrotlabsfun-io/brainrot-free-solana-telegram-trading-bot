@@ -9,7 +9,7 @@ from aiogram.utils.keyboard import InlineKeyboardBuilder
 from bot.keyboards.share_templates import WALLET_SCOUT_SHARE_URL
 
 
-def build_wallet_scout_main(is_supreme: bool, is_black: bool) -> InlineKeyboardMarkup:
+def build_wallet_scout_main() -> InlineKeyboardMarkup:
     builder = InlineKeyboardBuilder()
     builder.row(
         InlineKeyboardButton(text="🧠 DRAGON PRESETS",        callback_data="ws:presets"),
@@ -22,21 +22,14 @@ def build_wallet_scout_main(is_supreme: bool, is_black: bool) -> InlineKeyboardM
         InlineKeyboardButton(text="⏱ EARLY BUYERS",           callback_data="ws:earlybuyers"),
         InlineKeyboardButton(text="💣 BUNDLE DETECTOR",        callback_data="ws:bundle"),
     )
-    if is_supreme or is_black:
-        builder.row(
-            InlineKeyboardButton(
-                text="🔁 CROSS-TOKEN WINNERS" + (" 🖤" if is_black else ""),
-                callback_data="ws:repeated",
-            ),
-        )
+    builder.row(
+        InlineKeyboardButton(text="🔁 CROSS-TOKEN WINNERS", callback_data="ws:repeated"),
+    )
     builder.row(
         InlineKeyboardButton(text="🌊 GMGN TOKEN FEED",        callback_data="ws:feed"),
     )
     builder.row(
         InlineKeyboardButton(text="🐦  SHARE ON X / TWITTER",   url=WALLET_SCOUT_SHARE_URL),
-    )
-    builder.row(
-        InlineKeyboardButton(text="👑 SUPREME ACCESS",            callback_data="supreme:main"),
     )
     builder.row(
         InlineKeyboardButton(text="⬅️  BACK",                  callback_data="menu:back"),

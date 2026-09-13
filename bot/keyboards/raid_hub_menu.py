@@ -23,9 +23,6 @@ def build_hub_menu() -> InlineKeyboardMarkup:
         InlineKeyboardButton(text="🏆  LEADERBOARD",    callback_data="hub:leaderboard"),
     )
     builder.row(
-        InlineKeyboardButton(text="👑  PREMIUM ACCESS", callback_data="hub:premium_info"),
-    )
-    builder.row(
         InlineKeyboardButton(text="⬅️  BACK",           callback_data="menu:back"),
     )
     return builder.as_markup()
@@ -43,8 +40,6 @@ def build_raids_list(
         prefix = ""
         if raid.get("featured"):
             prefix += "🔥 "
-        if raid.get("premium_only"):
-            prefix += "👑 "
         title    = raid.get("title", "")[:28].upper()
         platform = raid.get("platform", "")[:10].upper()
         builder.row(
@@ -114,16 +109,6 @@ def build_skip_cancel() -> InlineKeyboardMarkup:
 
 def build_cancel_only() -> InlineKeyboardMarkup:
     builder = InlineKeyboardBuilder()
-    builder.row(InlineKeyboardButton(text="❌  CANCEL", callback_data="hub:fsm:cancel"))
-    return builder.as_markup()
-
-
-def build_premium_choice() -> InlineKeyboardMarkup:
-    builder = InlineKeyboardBuilder()
-    builder.row(
-        InlineKeyboardButton(text="👑  YES — PREMIUM ONLY", callback_data="hub:fsm:prem_yes"),
-        InlineKeyboardButton(text="🌐  NO — PUBLIC",        callback_data="hub:fsm:prem_no"),
-    )
     builder.row(InlineKeyboardButton(text="❌  CANCEL", callback_data="hub:fsm:cancel"))
     return builder.as_markup()
 

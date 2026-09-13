@@ -43,8 +43,6 @@ WELCOME_TEXT = (
     "<i>Pattern + surge signal entries &amp; exits</i>\n\n"
     "👁  <b>WATCHLIST</b>\n"
     "<i>Price alerts + quick buy on targets</i>\n\n"
-    "👑  <b>SUPREME</b>  /  🔱  <b>SUPREME BLACK</b>\n"
-    "<i>Burn $BRAINROT to unlock advanced automation</i>\n\n"
     f"<code>$BRAINROT  ·  {settings.BRAND_HANDLE}</code>\n\n"
     "<i>Select a module below.</i>"
 )

@@ -40,7 +40,7 @@ async def set_wallet(user_id: int, wallet_address: str) -> None:
                 wallet_address = ?,
                 updated_at     = CURRENT_TIMESTAMP
         """, (user_id, wallet_address, wallet_address))
-        # wallet_links — used by burn activation service
+        # wallet_links — linked external wallet
         await db.execute("""
             INSERT INTO wallet_links (user_id, wallet_address)
             VALUES (?, ?)

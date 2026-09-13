@@ -4,36 +4,12 @@ services/sniper_score_service.py
 BRAINROT Sniper Score engine.
 Score range: 0 – 100.  Higher = stronger candidate.
 
-Free  : liquidity + volume + buy pressure + age + activity
-SUPREME: all free factors + settings-match weighting + fit notes
+Factors: liquidity + volume + buy pressure + age + activity,
+plus settings-match weighting and fit notes.
 """
 
 from typing import Optional
 from utils.config import settings
-
-BRAINROT_MINT = settings.BRAINROT_MINT
-
-BRAINROT_OVERRIDE = {
-    "score":  100,
-    "rating": "🟢 PERFECT SCORE",
-    "risk_notes": [],
-    "summary": (
-        "Ecosystem token — BRAINROT powers the entire BrainRotChain ecosystem. "
-        "Burn to activate SUPREME, earn badges, and access full sniper capabilities."
-    ),
-    "ecosystem_notes": (
-        "🧠 <b>$BRAINROT Ecosystem</b>\n"
-        "• Utility token for the BrainRotChain Telegram bot\n"
-        "• Burn $BRAINROT to unlock SUPREME sniper access\n"
-        "• Earn tiered badges: Initiate → Verified Burner → Bronze → Silver → Gold → Black\n"
-        "• SUPREME unlocks advanced auto-buy, expanded feed, SUPREME presets & smart alerts\n"
-        "• Founding Burner badge for early activators\n"
-        "• Community-driven Raid Hub — launch campaigns, earn points, climb leaderboard\n"
-        "• All BRAINROT burned is sent to the on-chain incinerator — deflationary supply\n"
-        "• Contract: <code><your-token-mint></code>"
-    ),
-}
-
 
 def _strategy_bonus(token: dict, strategy_mode: str) -> tuple[int, list[str]]:
     """
@@ -180,19 +156,11 @@ def _rating(score: int) -> str:
 def score_token(
     token: dict,
     user_settings: dict,
-    entitlements,
 ) -> dict:
     """
-    Calculate the BRAINROT Sniper Score for a token.
+    Calculate the Sniper Score for a token.
     Returns dict: score, rating, risk_notes, summary, premium_notes.
     """
-    # ── BRAINROT ecosystem token override ─────────────────────────────────────
-    token_addr = token.get("address", "") or token.get("mint", "")
-    if token_addr == BRAINROT_MINT:
-        result = dict(BRAINROT_OVERRIDE)
-        result["premium_notes"] = BRAINROT_OVERRIDE["ecosystem_notes"]
-        return result
-
     liq   = float(token.get("liquidity_usd", 0))
     vol   = float(token.get("volume_h1") or token.get("volume_h24") or 0)
     buys  = int(token.get("buys_h1", 0))
@@ -295,10 +263,9 @@ def score_token(
     else:
         summary = "Very weak — not recommended for automated entry."
 
-    # ── SUPREME enhanced notes ─────────────────────────────────────────────────
+    # ── Settings-fit notes ─────────────────────────────────────────────────────
     premium_notes: Optional[str] = None
-    has_adv = getattr(entitlements, "has_advanced_filtering", False)
-    if has_adv and user_settings:
+    if user_settings:
         fit = []
         if liq >= user_settings.get("min_liquidity", 0) * 2:
             fit.append("✅ Strong liquidity fit")
@@ -312,7 +279,7 @@ def score_token(
             fit.append("💧 Priority — strong liquidity")
         if strategy_signals:
             fit = strategy_signals + fit   # lead with behavior signals
-        premium_notes = " · ".join(fit) if fit else "SUPREME analysis complete — no exceptional matches"
+        premium_notes = " · ".join(fit) if fit else "Analysis complete — no exceptional matches"
 
     return {
         "score":         score,

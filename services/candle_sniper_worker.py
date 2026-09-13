@@ -10,7 +10,7 @@ Two concurrent loops run inside start():
   2. Position loop   — monitors all open CS positions for exit conditions:
                          • Fixed take profit
                          • Fixed stop loss
-                         • Trailing stop (after TP activation, SUPREME+)
+                         • Trailing stop (after TP activation)
                          • Momentum failure exit (volume collapses)
                          • Max trade duration exit
 
@@ -90,14 +90,13 @@ async def _discovery_loop(bot: Bot) -> None:
     from services.candle_sniper_service import (
         discover_candidates, get_user_watchlist, fetch_cs_token_data,
         get_top_candidates, upsert_candidate, expire_old_candidates,
-        get_users_with_cs_autobuy, get_cs_entitlements, mark_candidate_traded,
+        get_users_with_cs_autobuy, mark_candidate_traded,
         count_open_cs_positions, open_cs_position, record_cs_price,
         cleanup_expired_price_history,
     )
     from services.candle_sniper_engine import (
         score_candidate, apply_profile_filters, STRATEGY_PROFILES,
     )
-    from services.brainrot_token_gate import get_active_tier
 
     while _running:
         try:
@@ -345,11 +344,9 @@ async def _surge_loop(bot: Bot) -> None:
                     slippage   = float(user_row.get("slippage_pct") or 10.0)
 
                     open_count = await count_open_cs_positions(user_id)
-                    from services.candle_sniper_service import get_cs_settings, get_cs_entitlements
-                    from services.brainrot_token_gate import get_active_tier
-                    tier = await get_active_tier(user_id)
-                    ents = get_cs_entitlements(tier)
-                    if open_count >= ents.max_open_positions:
+                    from services.candle_sniper_service import get_cs_settings
+                    _cfg_sb = await get_cs_settings(user_id)
+                    if open_count >= int(_cfg_sb.get("max_open_positions") or 5):
                         try:
                             await bot.send_message(
                                 user_id,
@@ -439,10 +436,9 @@ async def _maybe_autobuy(
 ) -> None:
     """Evaluate and optionally execute a Candle Sniper auto-buy for a user."""
     from services.candle_sniper_service import (
-        get_cs_settings, get_cs_entitlements, count_open_cs_positions,
+        get_cs_settings, count_open_cs_positions,
         open_cs_position, mark_candidate_traded,
     )
-    from services.brainrot_token_gate import get_active_tier
     from services.bot_wallet_service import get_or_create_bot_wallet, get_sol_balance
     from services.solana_execution_service import execute_buy
     from services.token_data_provider import get_token_price_in_sol
@@ -452,8 +448,6 @@ async def _maybe_autobuy(
 
     try:
         cfg      = await get_cs_settings(user_id)
-        tier     = await get_active_tier(user_id)
-        ents     = get_cs_entitlements(tier)
 
         # Check blacklist — CS must respect the same blacklist as auto-buy
         token_addr_bl = token.get("address", "")
@@ -480,7 +474,7 @@ async def _maybe_autobuy(
 
         # Check max open positions
         open_count = await count_open_cs_positions(user_id)
-        max_pos    = min(cfg.get("max_open_positions", 3), ents.max_open_positions)
+        max_pos    = int(cfg.get("max_open_positions") or 5)
         if open_count >= max_pos:
             logger.debug(f"CS skip user={user_id}: max positions ({max_pos}) reached")
             return

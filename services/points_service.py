@@ -20,8 +20,6 @@ POINTS_JOIN_RAID     = 2    # For joining any raid
 POINTS_COMPLETE_RAID = 10   # For marking a raid complete
 POINTS_CREATOR_BONUS = 1    # Awarded to creator per completion of their raid
 
-# Premium users earn this multiplier on completion points
-PREMIUM_MULTIPLIER   = 2
 
 
 async def award_points(user_id: int, points: int, username: Optional[str] = None) -> None:

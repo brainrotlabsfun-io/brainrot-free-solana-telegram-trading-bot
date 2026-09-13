@@ -35,10 +35,9 @@ class Settings:
     BRAND_HANDLE: str = ""           # social handle shown in share copy, e.g. "@myproject"
     SHARE_HASHTAG: str = ""          # e.g. "#mybot" — blank = no hashtag
 
-    # ── Payments ──────────────────────────────────────────────────────────
-    # SOL address that receives subscription / signup payments.
-    # MUST be your own wallet. Payment features stay disabled while blank.
-    PAYMENT_WALLET: str = ""
+    # ── Wallet encryption ──────────────────────────────────────────────────────
+    # Encrypts user bot-wallet private keys at rest. Required — see .env.example.
+    WALLET_ENCRYPTION_KEY: str = ""
 
     # ── Raid Hub behaviour ─────────────────────────────────────────────────────
     # True  = raids go live immediately after creation
@@ -47,51 +46,6 @@ class Settings:
 
     # Max hub raids a user can create per day
     DAILY_RAID_LIMIT: int = 2
-    PREMIUM_DAILY_RAID_LIMIT: int = 10
-
-    # ── $BRAINROT Burn / SUPREME ───────────────────────────────────────────────
-    BRAINROT_MINT:                 str   = ""   # your SPL token mint — see .env.example
-    SOLANA_RPC_URL:                str   = "https://api.mainnet-beta.solana.com"
-    SOLANA_RPC_URLS:               list  = field(default_factory=list)  # fallback list
-    WALLET_ENCRYPTION_KEY:         str   = ""   # required — see .env.example
-    SUPREME_REQUIRED_BURN_AMOUNT:       float = 1_000_000.0   # $BRAINROT tokens → SUPREME
-    SUPREME_BLACK_REQUIRED_BURN_AMOUNT: float = 10_000_000.0  # $BRAINROT tokens → SUPREME BLACK
-    SUPREME_PERMANENT_UNLOCK:           bool  = True
-    SUPREME_DURATION_DAYS:         int   = 30           # used only if not permanent
-    FOUNDING_BADGE_ENABLED:        bool  = True
-    FOUNDING_BADGE_CUTOFF:         str   = ""           # ISO date, e.g. "2025-06-01" or ""
-    FOUNDING_BADGE_MAX_USERS:      int   = 100          # 0 = unlimited
-
-    # ── Sniper Tool — Free tier limits ─────────────────────────────────────────
-    FREE_MAX_BUY_SOL:       float = 0.5
-    FREE_MAX_BUYS_PER_HOUR: int   = 3
-    FREE_WATCH_LIMIT:       int   = 5
-    FREE_PRESETS_LIMIT:     int   = 1
-    FREE_BLACKLIST_LIMIT:   int   = 10
-    FREE_FEED_LIMIT:        int   = 5
-
-    # ── Sniper Tool — SUPREME tier limits ──────────────────────────────────────
-    SUPREME_MAX_BUY_SOL:       float = 10.0
-    SUPREME_MAX_BUYS_PER_HOUR: int   = 50
-    SUPREME_WATCH_LIMIT:       int   = 50
-    SUPREME_PRESETS_LIMIT:     int   = 20
-    SUPREME_BLACKLIST_LIMIT:   int   = 200
-    SUPREME_FEED_LIMIT:        int   = 25
-
-    # ── Affiliate / Referral system ────────────────────────────────────────────
-    # SOL amount for the $100 qualifying Supreme signup payment
-    # Adjust when SOL price changes significantly (e.g. $100 / SOL_PRICE)
-    AFFILIATE_SIGNUP_SOL:              float = 0.67
-    # Enable mock payment confirmation for local testing (never enable in prod)
-    MOCK_SUPREME_PAYMENT_CONFIRMATION: bool  = False
-
-    # ── Candle Sniper tier limits ───────────────────────────────────────────────
-    CS_FREE_MAX_CANDIDATES:    int   = 15
-    CS_FREE_MAX_POSITIONS:     int   = 5
-    CS_SUPREME_MAX_CANDIDATES: int   = 50
-    CS_SUPREME_MAX_POSITIONS:  int   = 15
-    CS_SB_MAX_CANDIDATES:      int   = 9999  # Supreme Black — unlimited
-    CS_SB_MAX_POSITIONS:       int   = 9999  # Supreme Black — unlimited
 
 
 def _load_settings() -> Settings:
@@ -128,7 +82,6 @@ def _load_settings() -> Settings:
 
     auto_approve = os.getenv("RAID_AUTO_APPROVE", "true").strip().lower() == "true"
     daily_limit         = int(os.getenv("DAILY_RAID_LIMIT", "2"))
-    premium_daily_limit = int(os.getenv("PREMIUM_DAILY_RAID_LIMIT", "10"))
 
     return Settings(
         BOT_TOKEN               = token,
@@ -140,42 +93,9 @@ def _load_settings() -> Settings:
         TOKEN_NAME              = os.getenv("TOKEN_NAME", "TOKEN").strip(),
         BRAND_HANDLE            = os.getenv("BRAND_HANDLE", "").strip(),
         SHARE_HASHTAG           = os.getenv("SHARE_HASHTAG", "").strip(),
-        PAYMENT_WALLET          = os.getenv("PAYMENT_WALLET", "").strip(),
+        WALLET_ENCRYPTION_KEY   = enc_key,
         RAID_AUTO_APPROVE       = auto_approve,
         DAILY_RAID_LIMIT        = daily_limit,
-        PREMIUM_DAILY_RAID_LIMIT= premium_daily_limit,
-        # Burn / SUPREME
-        BRAINROT_MINT                = os.getenv("BRAINROT_MINT", "").strip(),
-        SOLANA_RPC_URL               = os.getenv("SOLANA_RPC_URL", "https://api.mainnet-beta.solana.com"),
-        SOLANA_RPC_URLS              = [
-            u.strip() for u in
-            os.getenv("SOLANA_RPC_URLS", os.getenv("SOLANA_RPC_URL", "https://api.mainnet-beta.solana.com")).split(",")
-            if u.strip()
-        ],
-        WALLET_ENCRYPTION_KEY        = enc_key,
-        SUPREME_REQUIRED_BURN_AMOUNT       = float(os.getenv("SUPREME_REQUIRED_BURN_AMOUNT", "1000000")),
-        SUPREME_BLACK_REQUIRED_BURN_AMOUNT = float(os.getenv("SUPREME_BLACK_REQUIRED_BURN_AMOUNT", "10000000")),
-        SUPREME_PERMANENT_UNLOCK           = os.getenv("SUPREME_PERMANENT_UNLOCK", "true").lower() == "true",
-        SUPREME_DURATION_DAYS        = int(os.getenv("SUPREME_DURATION_DAYS", "30")),
-        FOUNDING_BADGE_ENABLED       = os.getenv("FOUNDING_BADGE_ENABLED", "true").lower() == "true",
-        FOUNDING_BADGE_CUTOFF        = os.getenv("FOUNDING_BADGE_CUTOFF", ""),
-        FOUNDING_BADGE_MAX_USERS     = int(os.getenv("FOUNDING_BADGE_MAX_USERS", "100")),
-        # Sniper limits read from env with sensible defaults
-        FREE_MAX_BUY_SOL        = float(os.getenv("FREE_MAX_BUY_SOL", "0.5")),
-        FREE_MAX_BUYS_PER_HOUR  = int(os.getenv("FREE_MAX_BUYS_PER_HOUR", "3")),
-        FREE_WATCH_LIMIT        = int(os.getenv("FREE_WATCH_LIMIT", "5")),
-        FREE_PRESETS_LIMIT      = int(os.getenv("FREE_PRESETS_LIMIT", "1")),
-        FREE_BLACKLIST_LIMIT    = int(os.getenv("FREE_BLACKLIST_LIMIT", "10")),
-        FREE_FEED_LIMIT         = int(os.getenv("FREE_FEED_LIMIT", "5")),
-        SUPREME_MAX_BUY_SOL        = float(os.getenv("SUPREME_MAX_BUY_SOL", "10.0")),
-        SUPREME_MAX_BUYS_PER_HOUR  = int(os.getenv("SUPREME_MAX_BUYS_PER_HOUR", "50")),
-        SUPREME_WATCH_LIMIT        = int(os.getenv("SUPREME_WATCH_LIMIT", "50")),
-        SUPREME_PRESETS_LIMIT      = int(os.getenv("SUPREME_PRESETS_LIMIT", "20")),
-        SUPREME_BLACKLIST_LIMIT    = int(os.getenv("SUPREME_BLACKLIST_LIMIT", "200")),
-        SUPREME_FEED_LIMIT         = int(os.getenv("SUPREME_FEED_LIMIT", "25")),
-        # Affiliate
-        AFFILIATE_SIGNUP_SOL              = float(os.getenv("AFFILIATE_SIGNUP_SOL", "0.67")),
-        MOCK_SUPREME_PAYMENT_CONFIRMATION = os.getenv("MOCK_SUPREME_PAYMENT_CONFIRMATION", "false").lower() == "true",
     )
 
 
@@ -184,16 +104,6 @@ settings: Settings = _load_settings()
 
 def _warn_unconfigured() -> None:
     """Non-fatal nudges for features that stay off until configured."""
-    if not settings.PAYMENT_WALLET:
-        logger.warning(
-            "PAYMENT_WALLET is not set - paid signup/subscription features are "
-            "DISABLED. Set it to your own SOL address in .env to enable them."
-        )
-    if not settings.BRAINROT_MINT:
-        logger.warning(
-            "BRAINROT_MINT is not set - token-gating and burn features are "
-            "DISABLED. Set it to your own SPL token mint in .env to enable them."
-        )
     if not settings.BOT_USERNAME:
         logger.warning(
             "BOT_USERNAME is not set - share and referral links will be omitted."

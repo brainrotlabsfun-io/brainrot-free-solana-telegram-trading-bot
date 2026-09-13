@@ -5,8 +5,7 @@ Auto-buy settings management and job queue.
 Actual on-chain execution is in solana_execution_service.py.
 
 Risk controls enforced:
-  - max buy size via entitlements
-  - max buys per hour via entitlements + cooldown
+  - max buys per hour + cooldown
   - kill switch
   - low-balance protection
   - blacklist enforcement
@@ -192,31 +191,3 @@ async def get_liq_sniper_jobs(user_id: int, limit: int = 30) -> list[dict]:
             rows = await cursor.fetchall()
     return [dict(r) for r in rows]
 
-
-def validate_auto_buy_settings(settings: dict, entitlements) -> list[str]:
-    """
-    Returns a list of validation errors.
-    Empty list = all good.
-    """
-    errors = []
-    max_allowed = entitlements.max_buy_size_limit_sol
-    buy_size = float(settings.get("max_buy_size_sol", 0))
-
-    if buy_size <= 0:
-        errors.append("Max buy size must be > 0 SOL.")
-    if buy_size > max_allowed:
-        errors.append(f"Max buy size exceeds your tier limit ({max_allowed} SOL).")
-
-    score_threshold = int(settings.get("score_threshold", 0))
-    if not (1 <= score_threshold <= 100):
-        errors.append("Score threshold must be 1–100.")
-
-    slippage = float(settings.get("slippage", 0))
-    if not (0.1 <= slippage <= 50):
-        errors.append("Slippage must be between 0.1% and 50%.")
-
-    cooldown = int(settings.get("cooldown_seconds", 0))
-    if cooldown < 0:
-        errors.append("Cooldown must be >= 0 seconds.")
-
-    return errors

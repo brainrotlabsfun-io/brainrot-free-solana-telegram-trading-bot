@@ -1,16 +1,14 @@
 """
 bot/keyboards/auto_exit_menu.py
 ================================
-All inline keyboards for the Supreme Black Auto-Exit Manager.
+All inline keyboards for the Auto-Exit Manager.
 """
 
 from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton
 from aiogram.utils.keyboard import InlineKeyboardBuilder
 
-BLUR = "███"  # placeholder for locked values
 
-
-def build_auto_exit_main(s: dict, is_black: bool) -> InlineKeyboardMarkup:
+def build_auto_exit_main(s: dict) -> InlineKeyboardMarkup:
     """Main Auto-Exit Manager menu."""
     b = InlineKeyboardBuilder()
     power_icon = "🟢 ONLINE"  if s.get("enabled")   else "🔴 OFFLINE"
@@ -25,54 +23,45 @@ def build_auto_exit_main(s: dict, is_black: bool) -> InlineKeyboardMarkup:
         InlineKeyboardButton(text="⚙️ SETTINGS",             callback_data="ae:settings"),
     )
     b.row(
-        InlineKeyboardButton(text="⭐ BLACK PRESETS",        callback_data="ae:sys_presets"),
+        InlineKeyboardButton(text="⭐ BUILT-IN PRESETS",     callback_data="ae:sys_presets"),
         InlineKeyboardButton(text="📂 MY PRESETS",           callback_data="ae:presets"),
     )
-    if not is_black:
-        b.row(InlineKeyboardButton(
-            text="🖤 UPGRADE TO SUPREME BLACK",
-            callback_data="ae:upgrade_cta",
-        ))
     b.row(InlineKeyboardButton(text="⬅️  BACK", callback_data="sniper:main"))
     return b.as_markup()
 
 
-def build_sys_presets(presets: list[dict], is_black: bool) -> InlineKeyboardMarkup:
-    """List of Supreme Black system presets. Values blurred for non-members."""
+def build_sys_presets(presets: list[dict]) -> InlineKeyboardMarkup:
+    """List of the built-in exit-strategy presets."""
     b = InlineKeyboardBuilder()
     for p in presets:
         b.row(InlineKeyboardButton(
             text=f"⭐ {p['name'].upper()}",
-            callback_data=f"ae:view_preset:{p['id']}" if is_black else "ae:upgrade_cta",
+            callback_data=f"ae:view_preset:{p['id']}",
         ))
     b.row(InlineKeyboardButton(text="⬅️  BACK", callback_data="ae:main"))
     return b.as_markup()
 
 
-def build_preset_view(preset: dict, is_black: bool, is_system: bool) -> InlineKeyboardMarkup:
+def build_preset_view(preset: dict, is_system: bool) -> InlineKeyboardMarkup:
     b = InlineKeyboardBuilder()
-    if is_black:
-        b.row(
-            InlineKeyboardButton(text="✅ APPLY GLOBALLY",  callback_data=f"ae:apply_preset:{preset['id']}"),
-            InlineKeyboardButton(text="📋 CLONE",           callback_data=f"ae:clone_preset:{preset['id']}"),
-        )
-        if not is_system:
-            b.row(InlineKeyboardButton(text="🗑 DELETE",    callback_data=f"ae:del_preset:{preset['id']}"))
-    else:
-        b.row(InlineKeyboardButton(text="🔒 UNLOCK — UPGRADE TO SUPREME BLACK", callback_data="ae:upgrade_cta"))
+    b.row(
+        InlineKeyboardButton(text="✅ APPLY GLOBALLY",  callback_data=f"ae:apply_preset:{preset['id']}"),
+        InlineKeyboardButton(text="📋 CLONE",           callback_data=f"ae:clone_preset:{preset['id']}"),
+    )
+    if not is_system:
+        b.row(InlineKeyboardButton(text="🗑 DELETE",    callback_data=f"ae:del_preset:{preset['id']}"))
     b.row(InlineKeyboardButton(text="⬅️  BACK", callback_data="ae:sys_presets"))
     return b.as_markup()
 
 
-def build_user_presets(presets: list[dict], is_black: bool) -> InlineKeyboardMarkup:
+def build_user_presets(presets: list[dict]) -> InlineKeyboardMarkup:
     b = InlineKeyboardBuilder()
     for p in presets:
         b.row(InlineKeyboardButton(
             text=f"📂 {p['name'].upper()}",
             callback_data=f"ae:view_preset:{p['id']}",
         ))
-    if is_black:
-        b.row(InlineKeyboardButton(text="📋 CLONE A BLACK PRESET", callback_data="ae:sys_presets"))
+    b.row(InlineKeyboardButton(text="📋 CLONE A BUILT-IN PRESET", callback_data="ae:sys_presets"))
     b.row(InlineKeyboardButton(text="⬅️  BACK", callback_data="ae:main"))
     return b.as_markup()
 
@@ -97,7 +86,6 @@ def build_ae_positions_full(
     positions: list[dict],
     ae_s: dict,
     ab_s: dict,
-    is_black: bool,
 ) -> InlineKeyboardMarkup:
     """
     Full positions page keyboard including sniper quick-action buttons.
@@ -126,17 +114,16 @@ def build_ae_positions_full(
 
     # ── Preset picker ──────────────────────────────────────────────────────────
     b.row(InlineKeyboardButton(
-        text="⭐ SELECT EXIT PRESET" if is_black else "🔒 EXIT PRESET (BLACK ONLY)",
-        callback_data="ae:pick_exit_preset" if is_black else "ae:upgrade_cta",
+        text="⭐ SELECT EXIT PRESET",
+        callback_data="ae:pick_exit_preset",
     ))
 
     # ── Quick preset shortcut buttons ──────────────────────────────────────────
-    if is_black:
-        b.row(
-            InlineKeyboardButton(text="⚡ QUICK FLIP",     callback_data="ae:quick_preset:0"),
-            InlineKeyboardButton(text="🏃 BALANCED",       callback_data="ae:quick_preset:1"),
-            InlineKeyboardButton(text="🛡️ RISK-OFF",       callback_data="ae:quick_preset:2"),
-        )
+    b.row(
+        InlineKeyboardButton(text="⚡ QUICK FLIP",     callback_data="ae:quick_preset:0"),
+        InlineKeyboardButton(text="🏃 BALANCED",       callback_data="ae:quick_preset:1"),
+        InlineKeyboardButton(text="🛡️ RISK-OFF",       callback_data="ae:quick_preset:2"),
+    )
 
     # ── Per-position rows ──────────────────────────────────────────────────────
     if positions:
@@ -158,11 +145,10 @@ def build_ae_positions_full(
                     callback_data=f"ae:pos_detail:{pos_id}",
                 ),
             )
-            if is_black:
-                b.row(
-                    InlineKeyboardButton(text="💸 SELL 50%", callback_data=f"ae:manual_sell:{pos_id}:50"),
-                    InlineKeyboardButton(text="💸 SELL ALL", callback_data=f"ae:manual_sell:{pos_id}:100"),
-                )
+            b.row(
+                InlineKeyboardButton(text="💸 SELL 50%", callback_data=f"ae:manual_sell:{pos_id}:50"),
+                InlineKeyboardButton(text="💸 SELL ALL", callback_data=f"ae:manual_sell:{pos_id}:100"),
+            )
 
     b.row(
         InlineKeyboardButton(text="🔄 REFRESH", callback_data="ae:positions"),
@@ -171,18 +157,17 @@ def build_ae_positions_full(
     return b.as_markup()
 
 
-def build_pos_detail(ps: dict, is_black: bool) -> InlineKeyboardMarkup:
+def build_pos_detail(ps: dict) -> InlineKeyboardMarkup:
     b = InlineKeyboardBuilder()
     pos_id = ps["position_id"]
-    if is_black:
-        b.row(
-            InlineKeyboardButton(text="💸 MANUAL SELL 50%", callback_data=f"ae:manual_sell:{pos_id}:50"),
-            InlineKeyboardButton(text="💸 SELL ALL",        callback_data=f"ae:manual_sell:{pos_id}:100"),
-        )
-        b.row(
-            InlineKeyboardButton(text="🔀 CHANGE PRESET",   callback_data=f"ae:pos_preset:{pos_id}"),
-            InlineKeyboardButton(text="⏹ STOP WATCHING",   callback_data=f"ae:pos_stop:{pos_id}"),
-        )
+    b.row(
+        InlineKeyboardButton(text="💸 MANUAL SELL 50%", callback_data=f"ae:manual_sell:{pos_id}:50"),
+        InlineKeyboardButton(text="💸 SELL ALL",        callback_data=f"ae:manual_sell:{pos_id}:100"),
+    )
+    b.row(
+        InlineKeyboardButton(text="🔀 CHANGE PRESET",   callback_data=f"ae:pos_preset:{pos_id}"),
+        InlineKeyboardButton(text="⏹ STOP WATCHING",   callback_data=f"ae:pos_stop:{pos_id}"),
+    )
     b.row(InlineKeyboardButton(text="⬅️  BACK", callback_data="ae:positions"))
     return b.as_markup()
 
