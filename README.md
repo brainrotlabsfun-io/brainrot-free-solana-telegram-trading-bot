@@ -25,8 +25,8 @@ Prefer to do it by hand? Follow **[SETUP.md](SETUP.md)**.
 The short version, for people who've done this before:
 
 ```bash
-git clone https://github.com/YOUR_USERNAME/YOUR_REPO.git
-cd YOUR_REPO
+git clone https://github.com/brainrotlabsfun-io/brainrot-free-solana-telegram-trading-bot.git
+cd brainrot-free-solana-telegram-trading-bot
 python -m venv venv && source venv/bin/activate   # Windows: venv\Scripts\activate
 pip install -r requirements.txt
 cp .env.example .env
@@ -106,6 +106,24 @@ utils/
 
 ---
 
+## Support the project
+
+This bot is free and MIT-licensed — you owe nothing to run it, fork it, or
+ship your own version. If you want to support development anyway:
+
+**Buy ~$20 of SOL, swap it for $BRAINROT, and burn it.**
+
+```
+$BRAINROT contract address (CA)
+A9eR2GkTPEs3vbQjxMdkdvNJnWiKaBDq1Y9K5LEkpump
+```
+
+Verify the contract address against the official channels before you swap —
+address spoofing is common. Crypto purchases carry risk, including total loss.
+Not financial advice.
+
+---
+
 ## Security
 
 Read this before you deploy anything.
@@ -135,4 +153,5 @@ Nothing here is financial advice.
 
 ## License
 
-MIT — see [LICENSE](LICENSE).
+MIT — see [LICENSE](LICENSE). Free to use, modify, fork, and sell. The
+support request in that file is voluntary and is not a condition of the license.
